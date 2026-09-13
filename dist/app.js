@@ -72,6 +72,22 @@ function del(store, id) {
   });
 }
 
+function deleteWhere(store, predicate) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(store, "readwrite");
+    const objectStore = transaction.objectStore(store);
+    const request = objectStore.getAll();
+    request.onsuccess = () => {
+      for (const item of request.result || []) {
+        if (predicate(item)) objectStore.delete(item.id);
+      }
+    };
+    request.onerror = () => reject(request.error);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+}
+
 function clearStore(store) {
   return new Promise((resolve, reject) => {
     const request = tx(store, "readwrite").clear();
@@ -187,7 +203,7 @@ function renderMasters(data) {
       <label>地址<input name="address" required></label>
       <button>新增供應商</button>
     </form>
-    <div class="card">${listRows(suppliers, item => `${item.name}<br><small>${item.phone || "待補電話"}／${supplierUsage(data, item.id)} 樣食材</small>`, "suppliers")}</div>
+    <div class="card">${suppliers.length ? suppliers.map(item => supplierRow(item, data)).join("") : `<div class="empty">尚未建立資料</div>`}</div>
     <h2>食材</h2>
     <form class="card" data-action="addIngredient">
       <label>食材名稱<input name="ingredientName" required></label>
@@ -196,14 +212,14 @@ function renderMasters(data) {
       <label>供應商<select name="supplierId"><option value="">待補</option>${suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("")}</select></label>
       <button>新增食材</button>
     </form>
-    <div class="card">${listRows(ingredients, item => `${item.ingredientName}<br><small>${item.origin || "待補原產地"}／${supplierName(data.suppliers, item.supplierId)}</small>`, "ingredients")}</div>
+    <div class="card">${ingredients.length ? ingredients.map(item => ingredientRow(item, data, suppliers)).join("") : `<div class="empty">尚未建立資料</div>`}</div>
     <h2>調味料</h2>
     <form class="card" data-action="addSeasoning">
       <label>調味料名稱<input name="name" required></label>
       <label>供應商<select name="supplierId" required>${suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("")}</select></label>
       <button>新增調味料</button>
     </form>
-    <div class="card">${listRows(seasonings, item => `${item.name}<br><small>${supplierName(data.suppliers, item.supplierId)}</small>`, "seasonings")}</div>`;
+    <div class="card">${seasonings.length ? seasonings.map(item => seasoningRow(item, data, suppliers)).join("") : `<div class="empty">尚未建立資料</div>`}</div>`;
 }
 
 function renderRecipes(data) {
@@ -267,15 +283,74 @@ function renderBackup(data) {
     </div>`;
 }
 
-function listRows(items, renderItem, store) {
-  if (!items.length) return `<div class="empty">尚未建立資料</div>`;
-  return items.map(item => `<div class="row"><span>${renderItem(item)}</span><button class="danger" data-delete="${store}:${item.id}">刪除</button></div>`).join("");
+function supplierRow(item, data) {
+  return html`
+    <div class="row"><span><b>${escapeHtml(item.name)}</b><br><small>${escapeHtml(item.phone || "待補電話")}／${supplierUsage(data, item.id)} 樣食材</small></span><button class="danger" data-delete="suppliers:${item.id}">刪除錯誤供應商</button></div>
+    <details>
+      <summary>修改供應商</summary>
+      <form data-action="updateSupplier" data-id="${item.id}">
+        <label>供應商名稱<input name="name" required value="${escapeHtml(item.name)}"></label>
+        <label>負責人<input name="owner" required value="${escapeHtml(item.owner || "")}"></label>
+        <label>統編<input name="taxId" required value="${escapeHtml(item.taxId || "")}"></label>
+        <label>電話<input name="phone" required value="${escapeHtml(item.phone || "")}"></label>
+        <label>地址<input name="address" required value="${escapeHtml(item.address || "")}"></label>
+        <button class="secondary">儲存修改</button>
+      </form>
+    </details>`;
+}
+
+function ingredientRow(item, data, suppliers) {
+  const usedBy = data.recipeIngredients.filter(link => Number(link.ingredientId) === Number(item.id)).length;
+  return html`
+    <div class="row"><span><b>${escapeHtml(item.ingredientName)}</b><br><small>${escapeHtml(item.origin || "臺灣")}／${supplierName(data.suppliers, item.supplierId)}${usedBy ? `／${usedBy} 道菜使用` : ""}</small></span><button class="danger" data-delete="ingredients:${item.id}">刪除錯誤食材</button></div>
+    <details>
+      <summary>修改食材</summary>
+      <form data-action="updateIngredient" data-id="${item.id}">
+        <label>食材名稱<input name="ingredientName" required value="${escapeHtml(item.ingredientName)}"></label>
+        <label>產品名稱<input name="productName" value="${escapeHtml(item.productName || item.ingredientName)}"></label>
+        <label>原產地<input name="origin" placeholder="不填會自動填臺灣" value="${escapeHtml(item.origin || "臺灣")}"></label>
+        <label>供應商<select name="supplierId"><option value="">待補</option>${suppliers.map(s => `<option value="${s.id}" ${Number(item.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}</select></label>
+        <button class="secondary">儲存修改</button>
+      </form>
+    </details>`;
+}
+
+function seasoningRow(item, data, suppliers) {
+  const usedBy = data.recipeSeasonings.filter(link => Number(link.seasoningId) === Number(item.id)).length;
+  return html`
+    <div class="row"><span><b>${escapeHtml(item.name)}</b><br><small>${supplierName(data.suppliers, item.supplierId)}${usedBy ? `／${usedBy} 道菜使用` : ""}</small></span><button class="danger" data-delete="seasonings:${item.id}">刪除錯誤調味料</button></div>
+    <details>
+      <summary>修改調味料</summary>
+      <form data-action="updateSeasoning" data-id="${item.id}">
+        <label>調味料名稱<input name="name" required value="${escapeHtml(item.name)}"></label>
+        <label>供應商<select name="supplierId"><option value="">待補</option>${suppliers.map(s => `<option value="${s.id}" ${Number(item.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}</select></label>
+        <button class="secondary">儲存修改</button>
+      </form>
+    </details>`;
 }
 
 function recipeRow(recipe, data) {
   const links = data.recipeIngredients.filter(link => Number(link.recipeId) === Number(recipe.id));
   const names = links.map(link => data.ingredients.find(i => Number(i.id) === Number(link.ingredientId))?.ingredientName).filter(Boolean);
-  return `<div class="row"><span><b>${escapeHtml(recipe.name)}</b><br><small>${recipe.calories || 0} kcal／${names.join("、") || "尚未綁食材"}</small></span><button class="danger" data-delete="recipes:${recipe.id}">刪除</button></div>`;
+  const seasoningLinks = data.recipeSeasonings.filter(link => Number(link.recipeId) === Number(recipe.id));
+  const seasoningNames = seasoningLinks.map(link => data.seasonings.find(s => Number(s.id) === Number(link.seasoningId))?.name).filter(Boolean);
+  const ingredients = availableForScope(data.ingredients);
+  const seasonings = availableForScope(data.seasonings);
+  return html`
+    <div class="row"><span><b>${escapeHtml(recipe.name)}</b><br><small>${recipe.calories || 0} kcal／${names.join("、") || "尚未綁食材"}</small></span><button class="danger" data-delete="recipes:${recipe.id}">刪除錯誤菜色</button></div>
+    <details>
+      <summary>修改菜色與組成</summary>
+      <form data-action="updateRecipe" data-id="${recipe.id}">
+        <label>菜色名稱<input name="name" required value="${escapeHtml(recipe.name)}"></label>
+        <label>熱量<input name="calories" type="number" min="0" value="${Number(recipe.calories || 0)}"></label>
+        <h2>食材組成</h2>
+        ${ingredients.map(i => `<label class="check"><input type="checkbox" name="ingredientIds" value="${i.id}" ${links.some(link => Number(link.ingredientId) === Number(i.id)) ? "checked" : ""}><span>${escapeHtml(i.ingredientName)}</span></label>`).join("") || `<p class="muted">尚未建立食材</p>`}
+        <h2>調味料組成</h2>
+        ${seasonings.map(s => `<label class="check"><input type="checkbox" name="seasoningIds" value="${s.id}" ${seasoningLinks.some(link => Number(link.seasoningId) === Number(s.id)) ? "checked" : ""}><span>${escapeHtml(s.name)}</span></label>`).join("") || `<p class="muted">尚未建立調味料</p>`}
+        <button class="secondary">儲存修改</button>
+      </form>
+    </details>
+    ${seasoningNames.length ? `<p class="muted">調味料：${seasoningNames.map(escapeHtml).join("、")}</p>` : ""}`;
 }
 
 function supplierName(suppliers, id) {
@@ -322,6 +397,23 @@ async function handleSubmit(event) {
   if (action === "downloadOfficial") {
     await downloadOfficial(form);
     return;
+  }
+  if (action === "updateSupplier") {
+    await put("suppliers", { id: Number(form.dataset.id), branchId, name: values.name, owner: values.owner, taxId: values.taxId, phone: values.phone, address: values.address });
+  }
+  if (action === "updateIngredient") {
+    await put("ingredients", { id: Number(form.dataset.id), branchId, ingredientName: values.ingredientName, productName: values.productName || values.ingredientName, origin: values.origin || "臺灣", supplierId: values.supplierId ? Number(values.supplierId) : null });
+  }
+  if (action === "updateSeasoning") {
+    await put("seasonings", { id: Number(form.dataset.id), branchId, name: values.name, supplierId: values.supplierId ? Number(values.supplierId) : null });
+  }
+  if (action === "updateRecipe") {
+    const recipeId = Number(form.dataset.id);
+    await put("recipes", { id: recipeId, branchId, name: values.name, calories: Number(values.calories || 0) });
+    await deleteWhere("recipeIngredients", link => Number(link.recipeId) === recipeId);
+    await deleteWhere("recipeSeasonings", link => Number(link.recipeId) === recipeId);
+    for (const input of form.querySelectorAll("input[name='ingredientIds']:checked")) await put("recipeIngredients", { recipeId, ingredientId: Number(input.value) });
+    for (const input of form.querySelectorAll("input[name='seasoningIds']:checked")) await put("recipeSeasonings", { recipeId, seasoningId: Number(input.value) });
   }
   form.reset();
   await render();
@@ -693,9 +785,9 @@ document.addEventListener("click", async event => {
     await render();
   }
   const deleteButton = event.target.closest("[data-delete]");
-  if (deleteButton && confirm("確定刪除？")) {
+  if (deleteButton && confirm(deleteConfirmText(deleteButton.dataset.delete))) {
     const [store, id] = deleteButton.dataset.delete.split(":");
-    await del(store, id);
+    await deleteRecord(store, id);
     await render();
   }
   const action = event.target.closest("[data-action-click]");
@@ -712,3 +804,28 @@ init().catch(error => {
   console.error(error);
   document.getElementById("app").innerHTML = `<div class="notice">啟動失敗：${escapeHtml(error.message)}</div>`;
 });
+
+function deleteConfirmText(target) {
+  const [store] = target.split(":");
+  if (store === "suppliers") return "確定刪除這個供應商？使用它的食材和調味料會改成待補供應商。";
+  if (store === "ingredients") return "確定刪除這個食材？使用它的菜色會移除這項食材。";
+  if (store === "seasonings") return "確定刪除這個調味料？使用它的菜色會移除這項調味料。";
+  if (store === "recipes") return "確定刪除這道菜色？";
+  return "確定刪除？";
+}
+
+async function deleteRecord(store, id) {
+  const recordId = Number(id);
+  if (store === "suppliers") {
+    const data = await dataBundle();
+    for (const ingredient of data.ingredients.filter(item => Number(item.supplierId) === recordId)) await put("ingredients", { ...ingredient, supplierId: null });
+    for (const seasoning of data.seasonings.filter(item => Number(item.supplierId) === recordId)) await put("seasonings", { ...seasoning, supplierId: null });
+  }
+  if (store === "ingredients") await deleteWhere("recipeIngredients", link => Number(link.ingredientId) === recordId);
+  if (store === "seasonings") await deleteWhere("recipeSeasonings", link => Number(link.seasoningId) === recordId);
+  if (store === "recipes") {
+    await deleteWhere("recipeIngredients", link => Number(link.recipeId) === recordId);
+    await deleteWhere("recipeSeasonings", link => Number(link.recipeId) === recordId);
+  }
+  await del(store, recordId);
+}

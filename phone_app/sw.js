@@ -1,4 +1,4 @@
-const CACHE = "campus-food-local-v5";
+const CACHE = "campus-food-local-v6";
 const ASSETS = [
   "./",
   "./index.html",
