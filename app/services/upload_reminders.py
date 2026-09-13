@@ -66,7 +66,8 @@ def send_due_upload_reminders(db: Session, target_date: date | None = None, conf
         text = (
             f"提醒：{branch.name} 明天 {target.isoformat()} 尚未確認食材登錄已上傳。\n"
             f"{status}。\n"
-            f"若已到官方平台上傳，請回系統按「我已上傳」：{link}"
+            f"若已到官方平台上傳，請把食材登錄網頁產生的「已上傳 {branch.name} ...」文字貼給我，我會自動記錄。\n"
+            f"要設定休假或不提醒日：{link}"
         )
         bindings = db.scalars(
             select(LineUserBinding).where(

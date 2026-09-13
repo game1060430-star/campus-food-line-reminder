@@ -128,11 +128,11 @@ def handle_line_text(text: str, line_user_id: str, db: Session, config: LineConf
         return help_text(bindings)
     if normalized.startswith(("已上傳", "確認上傳", "上傳完成")):
         return record_upload_confirmation_from_text(normalized, bindings, db)
-    if normalized.startswith(("休息", "休息日", "公休")):
+    if normalized.startswith(("休息", "休息日", "公休", "休假", "不提醒")):
         return record_closed_dates_from_text(normalized, bindings, db)
     if normalized in {"今日狀態", "狀態", "今天"}:
         return today_status(bindings, db)
-    if normalized in {"登錄狀況", "登錄狀況查詢", "上傳查詢", "查詢登錄"} or normalized.startswith("登錄狀況 "):
+    if normalized in {"登錄狀況", "登錄狀況查詢", "上傳查詢", "查詢登錄", "查詢已登錄狀況"} or normalized.startswith(("登錄狀況 ", "查詢已登錄狀況 ")):
         return upload_confirmation_status(normalized, bindings, db)
     if normalized in {"上傳狀態", "任務", "待辦", "官方同步", "同步官方資料", "同步", "驗證碼", "captcha", "CAPTCHA"}:
         return "現在已改成手動下載 Excel 上傳，不再連官方平台登入或同步。請用「整理菜單」產生檔案。"
@@ -192,7 +192,8 @@ def help_text(bindings: list[LineUserBinding] | None = None) -> str:
         "可用指令：",
         "綁定 綁定碼",
         "已上傳 店名 2026-09-14 2026-09-18",
-        "休息 店名 2026-09-18 2026-09-20",
+        "休假 店名 2026-09-18 2026-09-20",
+        "不提醒 店名 2026-09-18 2026-09-20",
         "登錄狀況 2026-09-14 2026-09-30",
         "整理菜單",
         "食材",
