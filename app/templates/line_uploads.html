@@ -7,6 +7,7 @@
 {% if notice == 'opened' %}<div class="notice">已取消不提醒。</div>{% endif %}
 
 <form method="get" class="card form">
+  {% if access_token %}<input type="hidden" name="access" value="{{access_token}}">{% endif %}
   <label>店家
     <select name="branch_id">
       {% for b in branches %}<option value="{{b.id}}" {% if selected_branch_id == b.id %}selected{% endif %}>{{b.name}}</option>{% endfor %}
@@ -18,9 +19,9 @@
 
 <section class="card">
   <div class="month-row">
-    <a class="btn secondary" href="/uploads?branch_id={{selected_branch_id}}&date={{previous_month.isoformat()}}">上月</a>
+    <a class="btn secondary" href="{{with_access('/uploads?branch_id=' ~ selected_branch_id ~ '&date=' ~ previous_month.isoformat())}}">上月</a>
     <b>{{month_start.strftime('%Y-%m')}}</b>
-    <a class="btn secondary" href="/uploads?branch_id={{selected_branch_id}}&date={{next_month.isoformat()}}">下月</a>
+    <a class="btn secondary" href="{{with_access('/uploads?branch_id=' ~ selected_branch_id ~ '&date=' ~ next_month.isoformat())}}">下月</a>
   </div>
   <div class="legend">
     <span><i class="dot done"></i>已上傳</span>
@@ -28,7 +29,8 @@
     <span><i class="dot skipped"></i>不提醒</span>
     <span><i class="dot weekend"></i>六日</span>
   </div>
-  <form method="post" action="/uploads/calendar" class="calendar-form">
+  <form method="post" action="{{with_access('/uploads/calendar')}}" class="calendar-form">
+    {% if access_token %}<input type="hidden" name="access" value="{{access_token}}">{% endif %}
     <input type="hidden" name="branch_id" value="{{selected_branch_id}}">
     <input type="hidden" name="month_date" value="{{month_start.isoformat()}}">
     <div class="calendar-grid calendar-head">
@@ -57,16 +59,18 @@
   </form>
 </section>
 
-<form method="post" action="/uploads/confirm" class="card form">
+<form method="post" action="{{with_access('/uploads/confirm')}}" class="card form">
   <h2>區間標記已上傳</h2>
+  {% if access_token %}<input type="hidden" name="access" value="{{access_token}}">{% endif %}
   <input type="hidden" name="branch_id" value="{{selected_branch_id}}">
   <label>開始日期<input type="date" name="start_date" value="{{selected_date}}" required></label>
   <label>結束日期<input type="date" name="end_date" value="{{selected_date}}" required></label>
   <button>這段已上傳</button>
 </form>
 
-<form method="post" action="/uploads/closed" class="card form">
+<form method="post" action="{{with_access('/uploads/closed')}}" class="card form">
   <h2>區間設定不提醒</h2>
+  {% if access_token %}<input type="hidden" name="access" value="{{access_token}}">{% endif %}
   <input type="hidden" name="branch_id" value="{{selected_branch_id}}">
   <label>開始日期<input type="date" name="start_date" value="{{selected_date}}" required></label>
   <label>結束日期<input type="date" name="end_date" value="{{selected_date}}" required></label>

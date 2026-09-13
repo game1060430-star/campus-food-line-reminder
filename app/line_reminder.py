@@ -5,6 +5,7 @@ import os
 import secrets
 import time
 from datetime import date, timedelta
+from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
@@ -73,6 +74,20 @@ def date_today_iso() -> str:
 
 def current_line_user_id(request: Request) -> str | None:
     return getattr(request.state, "line_user_id", None)
+
+
+def current_access_token(request: Request) -> str:
+    return getattr(request.state, "line_access_token", "")
+
+
+def with_access(request: Request, path: str) -> str:
+    access = current_access_token(request)
+    if not access:
+        return path
+    parts = urlsplit(path)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["access"] = access
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
 
 def bound_branch_ids(request: Request, db: Session) -> set[int] | None:
@@ -144,6 +159,12 @@ async def require_access(request: Request, call_next):
     query_token = request.query_params.get("token", "")
     if token and query_token and secrets.compare_digest(query_token, token):
         return await call_next(request)
+    query_access = request.query_params.get("access", "")
+    line_user_id = verify_line_access_token(query_access)
+    if line_user_id:
+        request.state.line_user_id = line_user_id
+        request.state.line_access_token = query_access
+        return await call_next(request)
     line_user_id = verify_line_access_token(request.cookies.get("line_access", ""))
     if line_user_id:
         request.state.line_user_id = line_user_id
@@ -181,7 +202,11 @@ def line_login(token: str = "", next: str = "/uploads"):
         raise HTTPException(403)
     if not next.startswith("/") or next.startswith("//"):
         next = "/uploads"
-    response = RedirectResponse(next, 303)
+    parts = urlsplit(next)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["access"] = token
+    target = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+    response = RedirectResponse(target, 303)
     response.set_cookie("line_access", token, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 7)
     return response
 
@@ -221,6 +246,8 @@ def uploads_page(request: Request, branch_id: int | None = None, date: str | Non
             "confirmations": confirmations,
             "closed_dates": closed_dates,
             "notice": request.query_params.get("notice"),
+            "access_token": current_access_token(request),
+            "with_access": lambda path: with_access(request, path),
         },
     )
 
@@ -230,19 +257,25 @@ def date_from_iso(value: str) -> date:
 
 
 @app.post("/uploads/confirm")
-def confirm_upload(request: Request, branch_id: int = Form(...), start_date: date = Form(...), end_date: date = Form(...), weekdays: str = Form(DEFAULT_WEEKDAYS), excluded_dates: str = Form(""), db: Session = Depends(get_db)):
+def confirm_upload(request: Request, branch_id: int = Form(...), start_date: date = Form(...), end_date: date = Form(...), weekdays: str = Form(DEFAULT_WEEKDAYS), excluded_dates: str = Form(""), access: str = Form(""), db: Session = Depends(get_db)):
     require_branch_allowed(request, db, branch_id)
     dates = service_dates(start_date, end_date, parse_weekdays(weekdays), parse_excluded_dates(excluded_dates))
     confirm_upload_dates(db, branch_id, dates, "LINE網頁", "")
-    return RedirectResponse(f"/uploads?branch_id={branch_id}&date={start_date.isoformat()}&notice=confirmed", 303)
+    target = f"/uploads?branch_id={branch_id}&date={start_date.isoformat()}&notice=confirmed"
+    if access:
+        target += f"&{urlencode({'access': access})}"
+    return RedirectResponse(target, 303)
 
 
 @app.post("/uploads/closed")
-def mark_closed_dates(request: Request, branch_id: int = Form(...), start_date: date = Form(...), end_date: date = Form(...), weekdays: str = Form("0,1,2,3,4,5,6"), excluded_dates: str = Form(""), reason: str = Form(""), db: Session = Depends(get_db)):
+def mark_closed_dates(request: Request, branch_id: int = Form(...), start_date: date = Form(...), end_date: date = Form(...), weekdays: str = Form("0,1,2,3,4,5,6"), excluded_dates: str = Form(""), reason: str = Form(""), access: str = Form(""), db: Session = Depends(get_db)):
     require_branch_allowed(request, db, branch_id)
     dates = service_dates(start_date, end_date, parse_weekdays(weekdays), parse_excluded_dates(excluded_dates))
     set_closed_dates(db, branch_id, dates, reason)
-    return RedirectResponse(f"/uploads?branch_id={branch_id}&date={start_date.isoformat()}&notice=closed", 303)
+    target = f"/uploads?branch_id={branch_id}&date={start_date.isoformat()}&notice=closed"
+    if access:
+        target += f"&{urlencode({'access': access})}"
+    return RedirectResponse(target, 303)
 
 
 @app.post("/uploads/calendar")
@@ -253,6 +286,7 @@ async def update_upload_calendar(request: Request, db: Session = Depends(get_db)
     selected = [date.fromisoformat(str(value)) for value in form.getlist("dates")]
     action = str(form.get("calendar_action") or "")
     month_date = str(form.get("month_date") or date_today_iso())
+    access = str(form.get("access") or "")
     if selected and action == "closed":
         set_closed_dates(db, branch_id, selected, str(form.get("reason") or "行事曆設定休假"))
         notice = "closed"
@@ -264,7 +298,10 @@ async def update_upload_calendar(request: Request, db: Session = Depends(get_db)
         notice = "confirmed"
     else:
         notice = "none"
-    return RedirectResponse(f"/uploads?branch_id={branch_id}&date={month_date}&notice={notice}", 303)
+    target = f"/uploads?branch_id={branch_id}&date={month_date}&notice={notice}"
+    if access:
+        target += f"&{urlencode({'access': access})}"
+    return RedirectResponse(target, 303)
 
 
 @app.get("/admin/branches", response_class=HTMLResponse)
