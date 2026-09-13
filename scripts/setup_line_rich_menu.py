@@ -82,12 +82,12 @@ def center_text(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], text:
 
 
 def build_image() -> None:
-    width, height = 2500, 1686
+    width, height = 2500, 843
     img = Image.new("RGB", (width, height), "#f3f5f0")
     draw = ImageDraw.Draw(img)
-    title_font = font(76)
-    small_font = font(34)
-    icon_font = font(78)
+    title_font = font(66)
+    small_font = font(30)
+    icon_font = font(64)
 
     tiles = [
         ("查詢已登錄狀況", "看哪些日期已上傳 / 未上傳", "#0f766e", "1"),
@@ -99,11 +99,11 @@ def build_image() -> None:
         x1 = idx * tile_w
         x2 = width if idx == len(tiles) - 1 else x1 + tile_w
         draw.rectangle((x1, 0, x2, height), fill="#ffffff")
-        draw.rectangle((x1 + 24, 34, x2 - 24, height - 34), outline=color, width=10)
-        draw.ellipse((x1 + 310, 235, x1 + 500, 425), fill=color)
-        center_text(draw, (x1 + 310, 235, x1 + 500, 425), mark, "#ffffff", icon_font)
-        center_text(draw, (x1 + 50, 560, x2 - 50, 760), label, "#111827", title_font)
-        center_text(draw, (x1 + 70, 815, x2 - 70, 970), sub, "#4b5563", small_font)
+        draw.rectangle((x1 + 22, 28, x2 - 22, height - 28), outline=color, width=9)
+        draw.ellipse((x1 + 322, 115, x1 + 486, 279), fill=color)
+        center_text(draw, (x1 + 322, 115, x1 + 486, 279), mark, "#ffffff", icon_font)
+        center_text(draw, (x1 + 44, 350, x2 - 44, 500), label, "#111827", title_font)
+        center_text(draw, (x1 + 58, 555, x2 - 58, 690), sub, "#4b5563", small_font)
         if idx < len(tiles) - 1:
             draw.line((x2, 0, x2, height), fill="#d1d5db", width=6)
     img.save(IMAGE_PATH, "PNG", optimize=True)
@@ -118,14 +118,14 @@ def main() -> None:
         return f"{base_url}/login?{urllib.parse.urlencode({'token': web_token, 'next': path})}"
     build_image()
     payload = {
-        "size": {"width": 2500, "height": 1686},
+        "size": {"width": 2500, "height": 843},
         "selected": True,
         "name": "食材登錄快捷選單",
         "chatBarText": "快捷操作",
         "areas": [
-            {"bounds": {"x": 0, "y": 0, "width": 833, "height": 1686}, "action": {"type": "message", "text": "查詢已登錄狀況"}},
-            {"bounds": {"x": 833, "y": 0, "width": 834, "height": 1686}, "action": {"type": "message", "text": "設定休假不提醒"}},
-            {"bounds": {"x": 1667, "y": 0, "width": 833, "height": 1686}, "action": {"type": "message", "text": "說明"}},
+            {"bounds": {"x": 0, "y": 0, "width": 833, "height": 843}, "action": {"type": "message", "text": "查詢已登錄狀況"}},
+            {"bounds": {"x": 833, "y": 0, "width": 834, "height": 843}, "action": {"type": "message", "text": "設定休假不提醒"}},
+            {"bounds": {"x": 1667, "y": 0, "width": 833, "height": 843}, "action": {"type": "message", "text": "說明"}},
         ],
     }
     response = request_json("https://api.line.me/v2/bot/richmenu", token, payload)
