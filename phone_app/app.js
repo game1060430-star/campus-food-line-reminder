@@ -22,6 +22,15 @@ const OFFICIAL_TEMPLATES = {
   seasonings: { file: "seasoningstockdataCollegeExcelExample.xlsx", name: "調味料", cols: 20, required: [1, 2, 3, 4, 5, 8, 9, 10] },
   suppliers: { file: "supplierExcelExample.xlsx", name: "供應商", cols: 5, required: [1, 2, 3, 4, 5] }
 };
+const WEEKDAYS = [
+  [0, "週一"],
+  [1, "週二"],
+  [2, "週三"],
+  [3, "週四"],
+  [4, "週五"],
+  [5, "週六"],
+  [6, "週日"]
+];
 
 let db;
 let state = { view: "home", branchId: "" };
@@ -114,12 +123,24 @@ function activeBranchName(branches) {
 }
 
 function availableForScope(items) {
-  if (!state.branchId) return items.filter(item => !item.branchId);
-  return items.filter(item => !item.branchId || String(item.branchId) === String(state.branchId));
+  if (!state.branchId) return items.filter(item => !scopeIds(item).length);
+  return items.filter(item => availableForBranchId(item, state.branchId));
 }
 
 function availableForBranch(items, branchId) {
-  return items.filter(item => !item.branchId || String(item.branchId) === String(branchId));
+  return items.filter(item => availableForBranchId(item, branchId));
+}
+
+function availableForBranchId(item, branchId) {
+  const ids = scopeIds(item);
+  if (ids.length) return ids.map(String).includes(String(branchId));
+  return !item.branchId || String(item.branchId) === String(branchId);
+}
+
+function scopeIds(item) {
+  if (Array.isArray(item.branchIds) && item.branchIds.length) return item.branchIds.map(Number).filter(Boolean);
+  if (item.branchId) return [Number(item.branchId)];
+  return [];
 }
 
 async function dataBundle() {
@@ -202,6 +223,7 @@ function renderMasters(data) {
       <label>統編<input name="taxId" required></label>
       <label>電話<input name="phone" required></label>
       <label>地址<input name="address" required></label>
+      ${deliveryControls({})}
       <button>新增供應商</button>
     </form>
     <div class="card">${suppliers.length ? suppliers.map(item => supplierRow(item, data)).join("") : `<div class="empty">尚未建立資料</div>`}</div>
@@ -247,8 +269,7 @@ function renderExports(data) {
   const activeBranch = data.branches.find(branch => String(branch.id) === String(state.branchId));
   const branchId = activeBranch?.id || data.branches[0]?.id || "";
   const recipes = branchId ? availableForBranch(data.recipes, branchId) : [];
-  const today = new Date().toISOString().slice(0, 10);
-  const nextMonth = addDays(new Date(), 30).toISOString().slice(0, 10);
+  const [startDate, endDate] = defaultExportDates();
   return html`
     <h1>下載官方 Excel</h1>
     <div class="notice"><b>這裡只產生 Excel，不連官方網站。</b><br>下載後你再用手機或電腦手動上傳。檔案會各自下載，不會包成 ZIP。</div>
@@ -258,8 +279,8 @@ function renderExports(data) {
           ${data.branches.map(b => `<option value="${b.id}" ${String(branchId) === String(b.id) ? "selected" : ""}>${escapeHtml(b.name)}</option>`).join("")}
         </select>
       </label>
-      <label>開始日期<input name="startDate" type="date" required value="${today}"></label>
-      <label>結束日期<input name="endDate" type="date" required value="${nextMonth}"></label>
+      <label>開始日期<input name="startDate" type="date" required value="${startDate}"></label>
+      <label>結束日期<input name="endDate" type="date" required value="${endDate}"></label>
       <h2>要產生哪些檔案</h2>
       <label class="check"><input type="checkbox" name="fileTypes" value="menus" checked><span>菜單 Excel</span></label>
       <label class="check"><input type="checkbox" name="fileTypes" value="ingredients" checked><span>食材 Excel</span></label>
@@ -342,34 +363,45 @@ function bulkRecipesEditor(recipes) {
 }
 
 function supplierRow(item, data) {
+  const candidates = availableForScope(data.ingredients).filter(ingredient => Number(ingredient.supplierId) !== Number(item.id));
   return html`
-    <div class="row"><span><b>${escapeHtml(item.name)}</b><br><small>${escapeHtml(item.owner || "待補負責人")}／${escapeHtml(item.taxId || "待補統編")}／${escapeHtml(item.phone || "待補電話")}／${supplierUsage(data, item.id)} 樣食材</small></span><button class="danger" data-delete="suppliers:${item.id}">刪除錯誤供應商</button></div>
+    <div class="row"><span><b>${escapeHtml(item.name)}</b><br><small>${scopeText(item, data.branches)}／${escapeHtml(item.owner || "待補負責人")}／${escapeHtml(item.taxId || "待補統編")}／${escapeHtml(item.phone || "待補電話")}／${supplierUsage(data, item.id)} 樣食材</small><br><small>進貨：${deliveryText(item)}</small></span><button class="danger" data-delete="suppliers:${item.id}">刪除錯誤供應商</button></div>
     <details>
       <summary>修改供應商</summary>
       <form data-action="updateSupplier" data-id="${item.id}">
-        <input type="hidden" name="branchId" value="${item.branchId || ""}">
         <label>供應商名稱<input name="name" required value="${escapeHtml(item.name)}"></label>
         <label>負責人<input name="owner" required value="${escapeHtml(item.owner || "")}"></label>
         <label>統編<input name="taxId" required value="${escapeHtml(item.taxId || "")}"></label>
         <label>電話<input name="phone" required value="${escapeHtml(item.phone || "")}"></label>
         <label>地址<input name="address" required value="${escapeHtml(item.address || "")}"></label>
+        ${deliveryControls(item)}
+        ${scopeControls(item, data.branches)}
         <button class="secondary">儲存修改</button>
       </form>
-    </details>`;
+    </details>
+    ${candidates.length ? html`
+    <details>
+      <summary>把既有食材改到這個供應商</summary>
+      <form data-action="assignIngredientsToSupplier" data-id="${item.id}">
+        <p class="muted">適合新增供應商後，把原本已建立的食材直接轉過來。</p>
+        ${candidates.map(ingredient => `<label class="check"><input type="checkbox" name="ingredientIds" value="${ingredient.id}"><span>${escapeHtml(ingredient.ingredientName)}／${supplierName(data.suppliers, ingredient.supplierId)}</span></label>`).join("")}
+        <button class="secondary">更新食材供應商</button>
+      </form>
+    </details>` : ""}`;
 }
 
 function ingredientRow(item, data, suppliers) {
   const usedBy = data.recipeIngredients.filter(link => Number(link.ingredientId) === Number(item.id)).length;
   return html`
-    <div class="row"><span><b>${escapeHtml(item.ingredientName)}</b><br><small>${escapeHtml(item.origin || "臺灣")}／${supplierName(data.suppliers, item.supplierId)}${usedBy ? `／${usedBy} 道菜使用` : ""}</small></span><button class="danger" data-delete="ingredients:${item.id}">刪除錯誤食材</button></div>
+    <div class="row"><span><b>${escapeHtml(item.ingredientName)}</b><br><small>${scopeText(item, data.branches)}／${escapeHtml(item.origin || "臺灣")}／${supplierName(data.suppliers, item.supplierId)}${usedBy ? `／${usedBy} 道菜使用` : ""}</small></span><button class="danger" data-delete="ingredients:${item.id}">刪除錯誤食材</button></div>
     <details>
       <summary>修改食材</summary>
       <form data-action="updateIngredient" data-id="${item.id}">
-        <input type="hidden" name="branchId" value="${item.branchId || ""}">
         <label>食材名稱<input name="ingredientName" required value="${escapeHtml(item.ingredientName)}"></label>
         <label>產品名稱<input name="productName" value="${escapeHtml(item.productName || item.ingredientName)}"></label>
         <label>原產地<input name="origin" placeholder="不填會自動填臺灣" value="${escapeHtml(item.origin || "臺灣")}"></label>
         <label>供應商<select name="supplierId"><option value="">待補</option>${suppliers.map(s => `<option value="${s.id}" ${Number(item.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}</select></label>
+        ${scopeControls(item, data.branches)}
         <button class="secondary">儲存修改</button>
       </form>
     </details>`;
@@ -378,13 +410,13 @@ function ingredientRow(item, data, suppliers) {
 function seasoningRow(item, data, suppliers) {
   const usedBy = data.recipeSeasonings.filter(link => Number(link.seasoningId) === Number(item.id)).length;
   return html`
-    <div class="row"><span><b>${escapeHtml(item.name)}</b><br><small>${supplierName(data.suppliers, item.supplierId)}${usedBy ? `／${usedBy} 道菜使用` : ""}</small></span><button class="danger" data-delete="seasonings:${item.id}">刪除錯誤調味料</button></div>
+    <div class="row"><span><b>${escapeHtml(item.name)}</b><br><small>${scopeText(item, data.branches)}／${supplierName(data.suppliers, item.supplierId)}${usedBy ? `／${usedBy} 道菜使用` : ""}</small></span><button class="danger" data-delete="seasonings:${item.id}">刪除錯誤調味料</button></div>
     <details>
       <summary>修改調味料</summary>
       <form data-action="updateSeasoning" data-id="${item.id}">
-        <input type="hidden" name="branchId" value="${item.branchId || ""}">
         <label>調味料名稱<input name="name" required value="${escapeHtml(item.name)}"></label>
         <label>供應商<select name="supplierId"><option value="">待補</option>${suppliers.map(s => `<option value="${s.id}" ${Number(item.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}</select></label>
+        ${scopeControls(item, data.branches)}
         <button class="secondary">儲存修改</button>
       </form>
     </details>`;
@@ -398,13 +430,13 @@ function recipeRow(recipe, data) {
   const ingredients = availableForScope(data.ingredients);
   const seasonings = availableForScope(data.seasonings);
   return html`
-    <div class="row"><span><b>${escapeHtml(recipe.name)}</b><br><small>${recipe.calories || 0} kcal／${names.join("、") || "尚未綁食材"}</small></span><button class="danger" data-delete="recipes:${recipe.id}">刪除錯誤菜色</button></div>
+    <div class="row"><span><b>${escapeHtml(recipe.name)}</b><br><small>${scopeText(recipe, data.branches)}／${recipe.calories || 0} kcal／${names.join("、") || "尚未綁食材"}</small></span><button class="danger" data-delete="recipes:${recipe.id}">刪除錯誤菜色</button></div>
     <details>
       <summary>修改菜色與組成</summary>
       <form data-action="updateRecipe" data-id="${recipe.id}">
-        <input type="hidden" name="branchId" value="${recipe.branchId || ""}">
         <label>菜色名稱<input name="name" required value="${escapeHtml(recipe.name)}"></label>
         <label>熱量<input name="calories" type="number" min="0" value="${Number(recipe.calories || 0)}"></label>
+        ${scopeControls(recipe, data.branches)}
         <h2>食材組成</h2>
         ${ingredients.map(i => `<label class="check"><input type="checkbox" name="ingredientIds" value="${i.id}" ${links.some(link => Number(link.ingredientId) === Number(i.id)) ? "checked" : ""}><span>${escapeHtml(i.ingredientName)}</span></label>`).join("") || `<p class="muted">尚未建立食材</p>`}
         <h2>調味料組成</h2>
@@ -423,6 +455,50 @@ function supplierUsage(data, id) {
   return data.ingredients.filter(item => Number(item.supplierId) === Number(id)).length;
 }
 
+function scopeText(item, branches) {
+  const ids = scopeIds(item);
+  if (!ids.length) return "全部分店共用";
+  const names = ids.map(id => branches.find(branch => Number(branch.id) === Number(id))?.name).filter(Boolean);
+  return names.length ? `可用：${names.join("、")}` : "可用分店待確認";
+}
+
+function scopeControls(item, branches) {
+  const selected = new Set(scopeIds(item).map(String));
+  return html`
+    <details>
+      <summary>可用分店</summary>
+      <p class="muted">不勾任何分店代表全部分店共用；只勾幾間，就只有那幾間店可用。</p>
+      ${branches.map(branch => `<label class="check"><input type="checkbox" name="scopeBranchIds" value="${branch.id}" ${selected.has(String(branch.id)) ? "checked" : ""}><span>${escapeHtml(branch.name)}</span></label>`).join("") || `<p class="muted">尚未建立分店</p>`}
+    </details>`;
+}
+
+function deliveryControls(item) {
+  const selected = new Set(String(item.deliveryWeekdays || "").split(",").filter(Boolean));
+  return html`
+    <details>
+      <summary>固定進貨星期</summary>
+      <p class="muted">有固定送貨日才勾。沒勾時，食材進貨日會用供餐日前一個工作日。</p>
+      ${WEEKDAYS.map(([value, label]) => `<label class="check"><input type="checkbox" name="deliveryWeekdays" value="${value}" ${selected.has(String(value)) ? "checked" : ""}><span>${label}</span></label>`).join("")}
+    </details>`;
+}
+
+function deliveryText(item) {
+  const selected = new Set(String(item.deliveryWeekdays || "").split(",").filter(Boolean));
+  if (!selected.size) return "前一個工作日";
+  return WEEKDAYS.filter(([value]) => selected.has(String(value))).map(([, label]) => label).join("、");
+}
+
+function scopedPayload(form, fallbackBranchId) {
+  const branchIds = new FormData(form).getAll("scopeBranchIds").map(Number).filter(Boolean);
+  if (branchIds.length) return { branchId: branchIds[0], branchIds };
+  if (fallbackBranchId) return { branchId: Number(fallbackBranchId), branchIds: [Number(fallbackBranchId)] };
+  return { branchId: null, branchIds: [] };
+}
+
+function deliveryPayload(form) {
+  return new FormData(form).getAll("deliveryWeekdays").map(Number).filter(value => Number.isInteger(value)).sort((a, b) => a - b).join(",");
+}
+
 function formValues(form) {
   return Object.fromEntries(new FormData(form).entries());
 }
@@ -438,17 +514,17 @@ async function handleSubmit(event) {
     await put("branches", { name: values.name, schoolName: values.schoolName, serviceLocation: values.serviceLocation, restaurantName: values.restaurantName });
   }
   if (action === "addSupplier") {
-    await put("suppliers", { branchId, name: values.name, owner: values.owner, taxId: values.taxId, phone: values.phone, address: values.address });
+    await put("suppliers", { ...scopedPayload(form, branchId), name: values.name, owner: values.owner, taxId: values.taxId, phone: values.phone, address: values.address, deliveryWeekdays: deliveryPayload(form) });
   }
   if (action === "addIngredient") {
-    await put("ingredients", { branchId, ingredientName: values.ingredientName, productName: values.productName || values.ingredientName, origin: values.origin || "臺灣", supplierId: values.supplierId ? Number(values.supplierId) : null });
+    await put("ingredients", { ...scopedPayload(form, branchId), ingredientName: values.ingredientName, productName: values.productName || values.ingredientName, origin: values.origin || "臺灣", supplierId: values.supplierId ? Number(values.supplierId) : null });
   }
   if (action === "addSeasoning") {
     if (!values.supplierId) return alert("請先選供應商");
-    await put("seasonings", { branchId, name: values.name, supplierId: Number(values.supplierId) });
+    await put("seasonings", { ...scopedPayload(form, branchId), name: values.name, supplierId: Number(values.supplierId) });
   }
   if (action === "addRecipe") {
-    const recipeId = await put("recipes", { branchId, name: values.name, calories: Number(values.calories || 0) });
+    const recipeId = await put("recipes", { ...scopedPayload(form, branchId), name: values.name, calories: Number(values.calories || 0) });
     for (const input of form.querySelectorAll("input[name='ingredientIds']:checked")) await put("recipeIngredients", { recipeId, ingredientId: Number(input.value) });
     for (const input of form.querySelectorAll("input[name='seasoningIds']:checked")) await put("recipeSeasonings", { recipeId, seasoningId: Number(input.value) });
   }
@@ -461,21 +537,30 @@ async function handleSubmit(event) {
     return;
   }
   if (action === "updateSupplier") {
-    await put("suppliers", { id: Number(form.dataset.id), branchId: optionalNumber(values.branchId), name: values.name, owner: values.owner, taxId: values.taxId, phone: values.phone, address: values.address });
+    await put("suppliers", { id: Number(form.dataset.id), ...scopedPayload(form), name: values.name, owner: values.owner, taxId: values.taxId, phone: values.phone, address: values.address, deliveryWeekdays: deliveryPayload(form) });
   }
   if (action === "updateIngredient") {
-    await put("ingredients", { id: Number(form.dataset.id), branchId: optionalNumber(values.branchId), ingredientName: values.ingredientName, productName: values.productName || values.ingredientName, origin: values.origin || "臺灣", supplierId: values.supplierId ? Number(values.supplierId) : null });
+    await put("ingredients", { id: Number(form.dataset.id), ...scopedPayload(form), ingredientName: values.ingredientName, productName: values.productName || values.ingredientName, origin: values.origin || "臺灣", supplierId: values.supplierId ? Number(values.supplierId) : null });
   }
   if (action === "updateSeasoning") {
-    await put("seasonings", { id: Number(form.dataset.id), branchId: optionalNumber(values.branchId), name: values.name, supplierId: values.supplierId ? Number(values.supplierId) : null });
+    await put("seasonings", { id: Number(form.dataset.id), ...scopedPayload(form), name: values.name, supplierId: values.supplierId ? Number(values.supplierId) : null });
   }
   if (action === "updateRecipe") {
     const recipeId = Number(form.dataset.id);
-    await put("recipes", { id: recipeId, branchId: optionalNumber(values.branchId), name: values.name, calories: Number(values.calories || 0) });
+    await put("recipes", { id: recipeId, ...scopedPayload(form), name: values.name, calories: Number(values.calories || 0) });
     await deleteWhere("recipeIngredients", link => Number(link.recipeId) === recipeId);
     await deleteWhere("recipeSeasonings", link => Number(link.recipeId) === recipeId);
     for (const input of form.querySelectorAll("input[name='ingredientIds']:checked")) await put("recipeIngredients", { recipeId, ingredientId: Number(input.value) });
     for (const input of form.querySelectorAll("input[name='seasoningIds']:checked")) await put("recipeSeasonings", { recipeId, seasoningId: Number(input.value) });
+  }
+  if (action === "assignIngredientsToSupplier") {
+    const supplierId = Number(form.dataset.id);
+    const data = await dataBundle();
+    const selectedIds = new Set(new FormData(form).getAll("ingredientIds").map(Number));
+    for (const ingredient of data.ingredients.filter(item => selectedIds.has(Number(item.id)))) {
+      await put("ingredients", { ...ingredient, supplierId });
+    }
+    alert(`已更新 ${selectedIds.size} 個食材的供應商`);
   }
   if (action === "bulkSaveMasters") {
     await bulkSaveMasters(form);
@@ -492,10 +577,13 @@ async function handleSubmit(event) {
 async function bulkSaveMasters(form) {
   const data = await dataBundle();
   const formData = new FormData(form);
+  const suppliersById = new Map(data.suppliers.map(item => [Number(item.id), item]));
   const suppliers = arraysFromForm(formData, ["supplierIds", "supplierBranchIds", "supplierNames", "supplierOwners", "supplierTaxIds", "supplierPhones", "supplierAddresses"]);
   for (const row of suppliers) {
     if (!row.supplierIds || !row.supplierNames) continue;
+    const old = suppliersById.get(Number(row.supplierIds)) || {};
     await put("suppliers", {
+      ...old,
       id: Number(row.supplierIds),
       branchId: optionalNumber(row.supplierBranchIds),
       name: row.supplierNames,
@@ -718,8 +806,17 @@ function validateDownload(data, branch, fileTypes, recipeIds, startDate, endDate
       if (!supplier) problems.push(`食材「${ingredient?.ingredientName || id}」缺少供應商。`);
     }
   }
+  if (fileTypes.includes("seasonings")) {
+    for (const seasoning of usedSeasonings(data, recipes)) {
+      const supplier = data.suppliers.find(item => Number(item.id) === Number(seasoning?.supplierId));
+      if (!supplier) problems.push(`調味料「${seasoning?.name || "未命名"}」缺少供應商。`);
+    }
+  }
+  const suppliersToCheck = fileTypes.includes("suppliers")
+    ? availableForBranch(data.suppliers, branch?.id)
+    : usedSuppliers(data, recipes, fileTypes);
   if (fileTypes.includes("suppliers") || fileTypes.includes("ingredients") || fileTypes.includes("seasonings")) {
-    for (const supplier of availableForBranch(data.suppliers, branch?.id)) {
+    for (const supplier of suppliersToCheck) {
       if (!supplier.name || !supplier.owner || !supplier.taxId || !supplier.phone || !supplier.address) problems.push(`供應商「${supplier.name || "未命名"}」負責人、統編、電話、地址都要填。`);
     }
   }
@@ -742,14 +839,14 @@ function buildOfficialRows(data, branch, recipeIds, startDate, endDate) {
       for (const link of data.recipeIngredients.filter(item => Number(item.recipeId) === Number(recipe.id))) {
         const ingredient = data.ingredients.find(item => Number(item.id) === Number(link.ingredientId));
         const supplier = data.suppliers.find(item => Number(item.id) === Number(ingredient?.supplierId));
-        rows.ingredients.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, date, previousWorkday(date), ingredient?.productName || "", ingredient?.ingredientName || "", ingredient?.origin || "", supplier?.name || ""]);
+        rows.ingredients.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, date, purchaseDateFor(date, supplier), ingredient?.productName || "", ingredient?.ingredientName || "", ingredient?.origin || "", supplier?.name || ""]);
       }
     }
   }
   for (const id of seasoningIds) {
     const seasoning = data.seasonings.find(item => Number(item.id) === Number(id));
     const supplier = data.suppliers.find(item => Number(item.id) === Number(seasoning?.supplierId));
-    rows.seasonings.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, seasoning?.name || "", previousWorkday(startDate), "", "", startDate, endDate, supplier?.name || ""]);
+    rows.seasonings.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, seasoning?.name || "", purchaseDateFor(startDate, supplier), "", "", startDate, endDate, supplier?.name || ""]);
   }
   for (const supplier of suppliers) rows.suppliers.push([supplier.name, supplier.owner, supplier.taxId, supplier.address, supplier.phone]);
   return rows;
@@ -765,6 +862,27 @@ function usedSeasoningIds(data, recipes) {
   return [...new Set(data.recipeSeasonings.filter(item => recipeIds.has(Number(item.recipeId))).map(item => Number(item.seasoningId)))];
 }
 
+function usedSeasonings(data, recipes) {
+  const ids = new Set(usedSeasoningIds(data, recipes).map(Number));
+  return data.seasonings.filter(item => ids.has(Number(item.id)));
+}
+
+function usedSuppliers(data, recipes, fileTypes) {
+  const ids = new Set();
+  if (fileTypes.includes("ingredients")) {
+    const ingredientIds = new Set(usedIngredientIds(data, recipes).map(Number));
+    for (const ingredient of data.ingredients.filter(item => ingredientIds.has(Number(item.id)))) {
+      if (ingredient.supplierId) ids.add(Number(ingredient.supplierId));
+    }
+  }
+  if (fileTypes.includes("seasonings")) {
+    for (const seasoning of usedSeasonings(data, recipes)) {
+      if (seasoning.supplierId) ids.add(Number(seasoning.supplierId));
+    }
+  }
+  return data.suppliers.filter(item => ids.has(Number(item.id)));
+}
+
 function serviceDates(startDate, endDate) {
   const dates = [];
   for (let date = parseLocalDate(startDate); date <= parseLocalDate(endDate); date = addDays(date, 1)) {
@@ -778,6 +896,24 @@ function previousWorkday(dateText) {
   let date = addDays(parseLocalDate(dateText), -1);
   while (date.getDay() === 0 || date.getDay() === 6) date = addDays(date, -1);
   return formatDate(date);
+}
+
+function purchaseDateFor(dateText, supplier) {
+  const deliveryDays = String(supplier?.deliveryWeekdays || "").split(",").map(Number).filter(value => Number.isInteger(value));
+  if (!deliveryDays.length) return previousWorkday(dateText);
+  let date = addDays(parseLocalDate(dateText), -1);
+  for (let index = 0; index < 14; index += 1) {
+    const weekday = (date.getDay() + 6) % 7;
+    if (deliveryDays.includes(weekday)) return formatDate(date);
+    date = addDays(date, -1);
+  }
+  return previousWorkday(dateText);
+}
+
+function defaultExportDates() {
+  let start = addDays(new Date(), 1);
+  while (start.getDay() === 0 || start.getDay() === 6) start = addDays(start, 1);
+  return [formatDate(start), formatDate(addDays(start, 4))];
 }
 
 function parseLocalDate(dateText) {
