@@ -834,7 +834,7 @@ async function importOfficialWorkbook(file, type) {
   let result = { created: 0, updated: 0 };
   if (type === "suppliers") result = await importOfficialSuppliers(rows, branchId, data, errors);
   if (type === "ingredients") result = await importOfficialIngredients(rows, branchId, data, errors);
-  if (type === "recipes") result = await importOfficialRecipes(rows, branchId, data);
+  if (type === "recipes") result = await importOfficialRecipes(rows, branchId, data, errors);
   if (type === "seasonings") result = await importOfficialSeasonings(rows, branchId, data, errors);
   return { ...result, errors };
 }
@@ -898,19 +898,42 @@ async function importOfficialIngredients(rows, branchId, data, errors) {
   return { created, updated };
 }
 
-async function importOfficialRecipes(rows, branchId, data) {
+async function importOfficialRecipes(rows, branchId, data, errors) {
   let created = 0;
   let updated = 0;
   const existing = new Map(data.recipes.filter(item => sameScopeForImport(item, branchId)).map(item => [normalizeName(item.name), item]));
+  const ingredients = data.ingredients.filter(item => (branchId ? availableForBranchId(item, branchId) : !scopeIds(item).length));
+  const ingredientByName = new Map();
+  for (const ingredient of ingredients) {
+    ingredientByName.set(normalizeName(ingredient.ingredientName), ingredient);
+    if (ingredient.productName) ingredientByName.set(normalizeName(ingredient.productName), ingredient);
+  }
+  const linkedRecipes = new Set();
   for (const row of rows) {
     const name = cleanCell(row[5]);
     if (!name) continue;
     const old = existing.get(normalizeName(name));
-    await put("recipes", { ...(old || {}), ...importScope(branchId), id: old?.id, name, calories: Number(cleanCell(row[7]) || 0) || 0 });
+    const recipeId = await put("recipes", { ...(old || {}), ...importScope(branchId), id: old?.id, name, calories: Number(cleanCell(row[7]) || 0) || 0 });
     if (old) updated += 1;
     else {
-      existing.set(normalizeName(name), { name });
+      existing.set(normalizeName(name), { id: recipeId, name });
       created += 1;
+    }
+    const ingredientNames = splitIngredientNames(row[6]);
+    if (ingredientNames.length && !linkedRecipes.has(Number(recipeId))) {
+      linkedRecipes.add(Number(recipeId));
+      await deleteWhere("recipeIngredients", link => Number(link.recipeId) === Number(recipeId));
+      const linkedIngredientIds = new Set();
+      for (const ingredientName of ingredientNames) {
+        const ingredient = ingredientByName.get(normalizeName(ingredientName));
+        if (!ingredient) {
+          errors.push(`菜色「${name}」找不到食材「${ingredientName}」，未建立這個組成。`);
+          continue;
+        }
+        if (linkedIngredientIds.has(Number(ingredient.id))) continue;
+        linkedIngredientIds.add(Number(ingredient.id));
+        await put("recipeIngredients", { recipeId: Number(recipeId), ingredientId: Number(ingredient.id) });
+      }
     }
   }
   return { created, updated };
@@ -954,6 +977,13 @@ function sameScopeForImport(item, branchId) {
 
 function cleanCell(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function splitIngredientNames(value) {
+  return cleanCell(value)
+    .split(/[、,，;；\n\r]+/)
+    .map(item => item.trim())
+    .filter(Boolean);
 }
 
 async function downloadOfficial(form) {
