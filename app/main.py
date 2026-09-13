@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import inspect, or_, select, text
 from .database import Base, engine, get_db
 from .line_bot import LineConfig, handle_line_event, reply_text, verify_line_signature
-from .models import Branch, Supplier, Ingredient, Seasoning, Recipe, RecipeIngredient, RecipeSeasoning, DailyMenu, ItemBranchScope, LineBindingCode, UploadConfirmation
+from .models import Branch, Supplier, Ingredient, Seasoning, Recipe, RecipeIngredient, RecipeSeasoning, DailyMenu, ItemBranchScope, LineBindingCode, UploadConfirmation, ClosedDate
 from .services.excel_export import EXPORTS, build_export, build_seasoning_export, build_supplier_export, parse_excluded_dates, service_dates
 from .services.upload_reminders import send_due_upload_reminders
 
@@ -284,6 +284,18 @@ def confirm_upload_dates(db:Session, branch_id:int, dates:list[date], confirmed_
     db.commit()
     return count
 
+def set_closed_dates(db:Session, branch_id:int, dates:list[date], reason:str="") -> int:
+    count=0
+    for service_date in dates:
+        existing=db.scalar(select(ClosedDate).where(ClosedDate.branch_id==branch_id, ClosedDate.service_date==service_date))
+        if existing:
+            existing.reason=reason or existing.reason
+        else:
+            db.add(ClosedDate(branch_id=branch_id,service_date=service_date,reason=reason or "休息"))
+            count+=1
+    db.commit()
+    return count
+
 @app.middleware("http")
 async def require_web_access(request:Request, call_next):
     path=request.url.path
@@ -499,10 +511,14 @@ def uploads_page(request:Request, branch_id:int|None=None, date:str|None=None, d
         (c.branch_id,c.service_date): c
         for c in db.scalars(select(UploadConfirmation).where(UploadConfirmation.service_date.in_(days))).all()
     }
+    closed_dates={
+        (c.branch_id,c.service_date): c
+        for c in db.scalars(select(ClosedDate).where(ClosedDate.service_date.in_(days))).all()
+    }
     menu_counts={}
     for item in db.scalars(select(DailyMenu).where(DailyMenu.service_date.in_(days))).all():
         menu_counts[(item.branch_id,item.service_date)]=menu_counts.get((item.branch_id,item.service_date),0)+1
-    return templates.TemplateResponse("uploads.html",{"request":request,"branches":branches,"selected_branch_id":selected_branch_id,"selected_date":selected_date,"days":days,"confirmations":confirmations,"menu_counts":menu_counts,"notice":request.query_params.get("notice")})
+    return templates.TemplateResponse("uploads.html",{"request":request,"branches":branches,"selected_branch_id":selected_branch_id,"selected_date":selected_date,"days":days,"confirmations":confirmations,"closed_dates":closed_dates,"menu_counts":menu_counts,"notice":request.query_params.get("notice")})
 
 def date_today_iso() -> str:
     return date.today().isoformat()
@@ -516,6 +532,13 @@ def confirm_upload(branch_id:int=Form(...), start_date:date=Form(...), end_date:
     dates=service_dates(start_date,end_date,parse_weekdays(weekdays),excluded)
     confirm_upload_dates(db,branch_id,dates,confirmed_by,note)
     return RedirectResponse(f"/uploads?branch_id={branch_id}&date={start_date.isoformat()}&notice=confirmed",303)
+
+@app.post("/uploads/closed")
+def mark_closed_dates(branch_id:int=Form(...), start_date:date=Form(...), end_date:date=Form(...), weekdays:str=Form("0,1,2,3,4,5,6"), excluded_dates:str=Form(""), reason:str=Form(""), db:Session=Depends(get_db)):
+    excluded=parse_excluded_dates(excluded_dates)
+    dates=service_dates(start_date,end_date,parse_weekdays(weekdays),excluded)
+    set_closed_dates(db,branch_id,dates,reason)
+    return RedirectResponse(f"/uploads?branch_id={branch_id}&date={start_date.isoformat()}&notice=closed",303)
 
 @app.get("/exports/files/{file_path:path}")
 def download_export_file(file_path:str):

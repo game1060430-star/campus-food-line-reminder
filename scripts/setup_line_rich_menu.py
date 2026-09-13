@@ -90,8 +90,8 @@ def build_image() -> None:
     icon_font = font(118)
 
     tiles = [
-        ("店家管理", "分店 / 建檔 / 下載", "#0f766e", "1"),
-        ("查詢狀況", "LINE 回覆缺哪天", "#be123c", "2"),
+        ("查詢已登錄狀況", "LINE 回覆已上傳 / 未上傳", "#0f766e", "1"),
+        ("設定不提醒日期", "店休 / 國定假日 / 臨時公休", "#be123c", "2"),
     ]
     tile_h = height // 2
     for idx, (label, sub, color, mark) in enumerate(tiles):
@@ -122,8 +122,8 @@ def main() -> None:
         "name": "食材登錄快捷選單",
         "chatBarText": "快捷操作",
         "areas": [
-            {"bounds": {"x": 0, "y": 0, "width": 2500, "height": 843}, "action": {"type": "uri", "uri": secure("/")}},
-            {"bounds": {"x": 0, "y": 843, "width": 2500, "height": 843}, "action": {"type": "message", "text": "登錄狀況"}},
+            {"bounds": {"x": 0, "y": 0, "width": 2500, "height": 843}, "action": {"type": "message", "text": "登錄狀況"}},
+            {"bounds": {"x": 0, "y": 843, "width": 2500, "height": 843}, "action": {"type": "uri", "uri": secure("/uploads")}},
         ],
     }
     response = request_json("https://api.line.me/v2/bot/richmenu", token, payload)

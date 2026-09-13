@@ -3,6 +3,7 @@
 <h1>上傳確認</h1>
 <div class="notice"><b>提醒判斷</b><br>下載 Excel 不代表已上傳。只有在這裡按「我已上傳」後，LINE 提醒才會把該日期視為完成。六日不提醒。</div>
 {% if notice == 'confirmed' %}<div class="notice"><b>已記錄。</b><br>這個日期範圍已標記為已上傳。</div>{% endif %}
+{% if notice == 'closed' %}<div class="notice"><b>已設定。</b><br>這個日期範圍已標記為不提醒。</div>{% endif %}
 
 <form method="get" class="card form">
   <label>分店
@@ -36,14 +37,38 @@
   <button>我已上傳</button>
 </form>
 
+<form method="post" action="/uploads/closed" class="card form">
+  <h2>設定不提醒日期</h2>
+  <label>分店
+    <select name="branch_id">
+      {% for b in branches %}<option value="{{b.id}}" {% if selected_branch_id == b.id %}selected{% endif %}>{{b.name}}</option>{% endfor %}
+    </select>
+  </label>
+  <label>開始日期<input type="date" name="start_date" value="{{selected_date}}" required></label>
+  <label>結束日期<input type="date" name="end_date" value="{{selected_date}}" required></label>
+  <label>日期
+    <select name="weekdays">
+      <option value="0,1,2,3,4,5,6">每天</option>
+      <option value="0,1,2,3,4">週一到週五</option>
+      <option value="0,1,2,3,4,5">週一到週六</option>
+    </select>
+  </label>
+  <label>額外排除日期<textarea name="excluded_dates" rows="3" placeholder="一行或逗號分隔，例如：2026-10-09, 2026-10-10"></textarea></label>
+  <label>原因<input name="reason" placeholder="例如：店休、國定假日、臨時公休"></label>
+  <button class="secondary">這段日期不提醒</button>
+</form>
+
 <h2>近 14 天狀態</h2>
 {% for day in days %}
 {% set key = (selected_branch_id, day) %}
 {% set item = confirmations.get(key) %}
+{% set closed = closed_dates.get(key) %}
 <div class="card">
   <div class="row">
     <span><b>{{day.isoformat()}}</b><br><small>{{menu_counts.get(key, 0)}} 道菜</small></span>
-    {% if day.weekday() >= 5 %}
+    {% if closed %}
+    <span class="status pending">休息不提醒</span>
+    {% elif day.weekday() >= 5 %}
     <span class="status pending">六日不提醒</span>
     {% elif item %}
     <span class="status success">已確認上傳</span>
@@ -52,6 +77,7 @@
     {% endif %}
   </div>
   {% if item %}<small>確認人：{{item.confirmed_by or '未填'}}／{{item.confirmed_at}}{% if item.note %}／{{item.note}}{% endif %}</small>{% endif %}
+  {% if closed %}<small>不提醒原因：{{closed.reason or '休息'}}</small>{% endif %}
 </div>
 {% endfor %}
 {% endblock %}
