@@ -27,4 +27,6 @@ button.danger{background:#9f1239}
 .empty{color:#64748b;text-align:center;padding:24px 8px}
 .warning-list{margin:8px 0 0;padding-left:18px;color:#9f1239}
 .split-actions{display:grid;grid-template-columns:1fr;gap:8px}
+.bulk-item{border-top:1px solid #eee;padding:12px 0;display:grid;gap:4px}
+.bulk-item:first-of-type{border-top:0}
 @media(min-width:720px){.grid{grid-template-columns:1fr 1fr}.actions{grid-template-columns:1fr 1fr}}
