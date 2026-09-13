@@ -16,6 +16,7 @@ const LABELS = {
   recipeSeasonings: "菜色調味料",
   uploadConfirmations: "上傳確認"
 };
+const VISIBLE_BACKUP_STORES = ["branches", "suppliers", "ingredients", "seasonings", "recipes", "uploadConfirmations"];
 const OFFICIAL_TEMPLATES = {
   menus: { file: "PreMenuExcelExample.xlsx", name: "菜單", cols: 8, required: [1, 2, 3, 4, 6, 7, 8] },
   ingredients: { file: "PrerestaurantingredientExcelExample.xlsx", name: "食材", cols: 22, required: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
@@ -294,6 +295,25 @@ function renderExports(data) {
       ${recipes.map(recipe => `<label class="check"><input type="checkbox" name="recipeIds" value="${recipe.id}" checked><span>${escapeHtml(recipe.name)}</span></label>`).join("") || `<p class="muted">這個分店還沒有菜色</p>`}
       <button>產生並下載</button>
       <div id="downloadResult"></div>
+    </form>
+    <form class="card" data-action="lineCommand">
+      <h2>LINE 提醒文字</h2>
+      <label>分店
+        <select name="branchId" required>
+          ${data.branches.map(b => `<option value="${b.id}" ${String(branchId) === String(b.id) ? "selected" : ""}>${escapeHtml(b.name)}</option>`).join("")}
+        </select>
+      </label>
+      <label>用途
+        <select name="commandType">
+          <option value="closed">設定休息日，不提醒</option>
+          <option value="status">查詢登錄狀況</option>
+          <option value="uploaded">補記已上傳</option>
+        </select>
+      </label>
+      <label>開始日期<input name="startDate" type="date" required value="${startDate}"></label>
+      <label>結束日期<input name="endDate" type="date" required value="${endDate}"></label>
+      <button>產生 LINE 文字</button>
+      <div id="lineCommandResult"></div>
     </form>`;
 }
 
@@ -317,7 +337,7 @@ function renderBackup(data) {
       <div id="officialImportResult"></div>
     </div>
     <div class="grid">
-      ${STORES.map(store => `<div class="card"><b>${LABELS[store]}</b><br><small>${data[store].length} 筆</small></div>`).join("")}
+      ${VISIBLE_BACKUP_STORES.map(store => `<div class="card"><b>${LABELS[store]}</b><br><small>${data[store].length} 筆</small></div>`).join("")}
     </div>`;
 }
 
@@ -579,6 +599,10 @@ async function handleSubmit(event) {
   }
   if (action === "downloadOfficial") {
     await downloadOfficial(form);
+    return;
+  }
+  if (action === "lineCommand") {
+    generateLineCommand(form);
     return;
   }
   if (action === "updateSupplier") {
@@ -1039,9 +1063,31 @@ async function downloadOfficial(form) {
   result.innerHTML = html`
     <div class="notice">
       已產生 ${fileTypes.length} 個 Excel。若手機瀏覽器擋住多檔下載，請再按一次或改成一次只勾一種檔案。
-      <br><br><b>上傳到官方平台後，把下面這段傳給 LINE 機器人：</b>
-      <textarea id="lineUploadText" readonly rows="2">${lineText}</textarea>
-      <button type="button" data-copy-target="lineUploadText" class="secondary">複製 LINE 回報文字</button>
+      <br><br><button type="button" data-line-upload-text="${escapeHtml(lineText)}">我已上傳官方平台</button>
+      <div id="lineUploadResult"></div>
+    </div>`;
+}
+
+function generateLineCommand(form) {
+  const data = new FormData(form);
+  const branchName = form.querySelector(`select[name="branchId"] option:checked`)?.textContent?.trim() || "";
+  const startDate = data.get("startDate");
+  const endDate = data.get("endDate");
+  const commandType = data.get("commandType");
+  const prefix = commandType === "closed" ? "休息" : commandType === "status" ? "登錄狀況" : "已上傳";
+  const text = prefix === "登錄狀況"
+    ? `${prefix} ${startDate} ${endDate}`
+    : `${prefix} ${branchName} ${startDate} ${endDate}`;
+  const result = document.getElementById("lineCommandResult");
+  if (result) result.innerHTML = lineCopyBox("lineCommandText", text, commandType === "closed" ? "把這段傳給 LINE 機器人，這段日期就不會提醒未上傳。" : "把這段傳給 LINE 機器人。");
+}
+
+function lineCopyBox(id, text, helpText) {
+  return html`
+    <div class="notice">
+      ${escapeHtml(helpText)}
+      <textarea id="${id}" readonly rows="2">${escapeHtml(text)}</textarea>
+      <button type="button" data-copy-target="${id}" class="secondary">複製 LINE 文字</button>
     </div>`;
 }
 
@@ -1346,6 +1392,11 @@ document.addEventListener("click", async event => {
   }
   const action = event.target.closest("[data-action-click]");
   if (action?.dataset.actionClick === "exportBackup") await exportBackup();
+  const lineUpload = event.target.closest("[data-line-upload-text]");
+  if (lineUpload) {
+    const target = document.getElementById("lineUploadResult");
+    if (target) target.innerHTML = lineCopyBox("lineUploadText", lineUpload.dataset.lineUploadText, "把下面這段傳給 LINE 機器人，它就會記錄這段日期已上傳。");
+  }
   const copy = event.target.closest("[data-copy-target]");
   if (copy) {
     const target = document.getElementById(copy.dataset.copyTarget);
