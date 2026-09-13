@@ -1,6 +1,6 @@
 {
   "project_id": "appgprj_6aa60434923081918ed610c6767581ef",
   "static": {
-    "directory": "phone_app"
+    "directory": "dist"
   }
 }

@@ -1,0 +1,15 @@
+{
+  "name": "食材登錄本機版",
+  "short_name": "食材登錄",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f6f7f8",
+  "theme_color": "#111111",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
