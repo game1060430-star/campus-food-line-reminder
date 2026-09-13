@@ -76,10 +76,12 @@ def ensure_schema():
 ensure_schema()
 app = FastAPI(title="校園食材登錄助手")
 BASE = Path(__file__).resolve().parent
+ROOT_DIR = BASE.parent
 templates = Jinja2Templates(directory=str(BASE/"templates"))
 app.mount("/static", StaticFiles(directory=str(BASE/"static")), name="static")
+app.mount("/phone-app", StaticFiles(directory=str(ROOT_DIR/"phone_app"), html=True), name="phone_app")
 
-PUBLIC_PREFIXES=("/api/line/webhook","/static/","/health","/login")
+PUBLIC_PREFIXES=("/api/line/webhook","/static/","/phone-app","/health","/login")
 DEFAULT_WEEKDAYS="0,1,2,3,4"
 
 def web_access_token() -> str:
