@@ -1,3 +1,8 @@
+window.addEventListener("error", event => {
+  const app = document.getElementById("app");
+  if (app) app.innerHTML = `<div class="notice">啟動失敗：${escapeHtml(event.message || "未知錯誤")}</div>`;
+});
+
 const DB_NAME = "campus-food-local";
 const DB_VERSION = 1;
 const STORES = ["branches", "suppliers", "ingredients", "seasonings", "recipes", "recipeIngredients", "recipeSeasonings", "uploadConfirmations"];
@@ -17,6 +22,10 @@ let state = { view: "home", branchId: "" };
 
 function openDb() {
   return new Promise((resolve, reject) => {
+    if (!("indexedDB" in window)) {
+      reject(new Error("這個瀏覽器不支援本機資料庫 IndexedDB，請用 Safari 或 Chrome 開啟。"));
+      return;
+    }
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       const database = request.result;
