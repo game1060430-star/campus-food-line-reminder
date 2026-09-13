@@ -1,0 +1,19 @@
+name: LINE upload reminders
+
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger reminder endpoint
+        run: |
+          curl --fail --show-error --silent \
+            --request POST \
+            "${REMINDER_URL}/tasks/upload-reminders?token=${WEB_ACCESS_TOKEN}"
+        env:
+          REMINDER_URL: ${{ secrets.REMINDER_URL }}
+          WEB_ACCESS_TOKEN: ${{ secrets.WEB_ACCESS_TOKEN }}

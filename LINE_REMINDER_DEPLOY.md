@@ -68,13 +68,14 @@ https://你的-line-提醒服務網址/login?token=WEB_ACCESS_TOKEN&next=/admin/
 
 ## 定時提醒
 
-`render-line.yaml` 已包含一個每天 20:00 執行的 cron job：
+免費測試部署的 `render.yaml` 不使用 Render Cron，改用 GitHub Actions 每天 20:00（Asia/Taipei）呼叫提醒端點。需要在 GitHub repo secrets 設定：
 
 ```text
-python scripts/send_upload_reminders.py
+REMINDER_URL=https://你的-line-提醒服務網址
+WEB_ACCESS_TOKEN=和 Render 上相同的 WEB_ACCESS_TOKEN
 ```
 
-若使用其他雲端，也可以每天固定時間呼叫：
+若改用付費雲端排程，也可以每天固定時間呼叫：
 
 ```text
 POST https://你的-line-提醒服務網址/tasks/upload-reminders
