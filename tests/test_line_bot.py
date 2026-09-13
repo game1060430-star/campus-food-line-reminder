@@ -100,7 +100,7 @@ def test_line_text_requires_binding_before_status():
     assert "尚未綁定分店" in message
 
 
-def test_removed_captcha_command_points_to_excel_workflow():
+def test_removed_captcha_command_points_to_line_reminder_scope():
     db = make_db()
     branch = Branch(
         name="A店",
@@ -116,7 +116,7 @@ def test_removed_captcha_command_points_to_excel_workflow():
 
     message = handle_line_text("驗證碼", "UADMIN", db, config)
 
-    assert "手動下載 Excel" in message
+    assert "LINE 只負責提醒" in message
 
 
 def test_upload_status_query_reports_confirmed_and_missing_days():

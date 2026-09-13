@@ -125,7 +125,7 @@ def handle_line_text(text: str, line_user_id: str, db: Session, config: LineConf
     if normalized in {"管理員說明", "管理"}:
         return admin_help_text(bindings)
     if normalized in {"安全連結", "登入連結", "網頁入口"}:
-        return secure_web_link(config)
+        return line_user_upload_link(config, line_user_id)
     if normalized in {"說明", "help", "Help", "HELP"}:
         return help_text(bindings)
     if normalized in {"設定休假不提醒", "設定不提醒日期", "休假設定", "不提醒設定"}:
@@ -137,19 +137,21 @@ def handle_line_text(text: str, line_user_id: str, db: Session, config: LineConf
         return record_closed_dates_from_text(normalized, bindings, db)
     if normalized in {"今日狀態", "狀態", "今天"}:
         return today_status(bindings, db)
-    if normalized in {"登錄狀況", "登錄狀況查詢", "上傳查詢", "查詢登錄", "查詢已登錄狀況"} or normalized.startswith(("登錄狀況 ", "查詢已登錄狀況 ")):
+    if normalized in {"登錄狀況", "登錄狀況查詢", "上傳查詢", "查詢登錄", "查詢已登錄狀況"}:
+        return upload_confirmation_status(normalized, bindings, db) + "\n\n" + line_user_upload_link(config, line_user_id)
+    if normalized.startswith(("登錄狀況 ", "查詢已登錄狀況 ")):
         return upload_confirmation_status(normalized, bindings, db)
     if normalized in {"上傳狀態", "任務", "待辦", "官方同步", "同步官方資料", "同步", "驗證碼", "captcha", "CAPTCHA"}:
-        return "現在已改成手動下載 Excel 上傳，不再連官方平台登入或同步。請用「整理菜單」產生檔案。"
+        return "現在 LINE 只負責提醒與記錄已上傳日期，不再連官方平台登入或同步。"
     if normalized in {"菜單", "排程", "整理菜單", "產生Excel", "產生 Excel"}:
-        return f"整理上傳菜單：{secure_web_url(config, '/exports')}"
+        return "食材整理與 Excel 產生請用手機本機食材工具；LINE 這邊只記錄已上傳與休假不提醒。"
     if normalized in {"首頁", "主選單", "工作區", "分店管理", "資源共享"}:
-        return f"系統首頁：{secure_web_url(config, '/')}"
+        return line_user_upload_link(config, line_user_id)
     if normalized in {"確認上傳", "上傳確認", "我已上傳"}:
         url = line_bound_web_url(config, line_user_id, "/uploads")
         return f"上傳確認：{url}" if url else f"上傳確認：{secure_web_url(config, '/uploads')}"
     if normalized in {"食材", "進貨", "新增食材"}:
-        return f"食材主檔：{secure_web_url(config, '/ingredients')}"
+        return "食材主檔請用手機本機食材工具管理；LINE 這邊只做提醒與上傳日期紀錄。"
     return help_text()
 
 
@@ -223,6 +225,13 @@ def secure_web_link(config: LineConfig) -> str:
     if not url:
         return "尚未設定網頁安全連結，請先設定 WEB_ACCESS_TOKEN。"
     return f"管理員網頁入口：{url}"
+
+
+def line_user_upload_link(config: LineConfig, line_user_id: str) -> str:
+    url = line_bound_web_url(config, line_user_id, "/uploads")
+    if not url:
+        return "尚未設定 WEB_ACCESS_TOKEN，無法產生專屬連結。"
+    return f"登錄狀況 / 休假不提醒網頁：{url}"
 
 
 def secure_web_url(config: LineConfig, path: str = "/") -> str:

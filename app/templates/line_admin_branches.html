@@ -1,0 +1,21 @@
+{% extends 'line_base.html' %}
+{% block content %}
+<h1>店家綁定</h1>
+<form method="post" class="card form">
+  <label>店名<input name="name" required placeholder="例如：娃子複合式餐飲"></label>
+  <button>新增店家</button>
+</form>
+{% for branch in branches %}
+<div class="card">
+  <div class="month-row">
+    <b>{{branch.name}}</b>
+    <form method="post" action="/admin/branches/{{branch.id}}/code"><button class="secondary">產生綁定碼</button></form>
+  </div>
+  {% set code = codes.get(branch.id) %}
+  {% if code %}
+  <p>綁定碼：<b>{{code.code}}</b></p>
+  <small>到 LINE 傳：綁定 {{code.code}}</small>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

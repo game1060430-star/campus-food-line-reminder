@@ -1,7 +1,6 @@
 import json
 import os
 import urllib.request
-import urllib.parse
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -112,10 +111,6 @@ def build_image() -> None:
 def main() -> None:
     load_dotenv(ROOT / ".env")
     token = env("LINE_CHANNEL_ACCESS_TOKEN")
-    base_url = env("APP_BASE_URL").rstrip("/")
-    web_token = env("WEB_ACCESS_TOKEN")
-    def secure(path: str) -> str:
-        return f"{base_url}/login?{urllib.parse.urlencode({'token': web_token, 'next': path})}"
     build_image()
     payload = {
         "size": {"width": 2500, "height": 843},
