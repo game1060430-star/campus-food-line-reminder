@@ -167,6 +167,17 @@ function renderMasters(data) {
   return html`
     <h1>資料管理</h1>
     <div class="card">${branchSelect(data.branches)}</div>
+    <h2>初期大量建檔</h2>
+    <form class="card" data-action="bulkNames">
+      <label>供應商／調味料
+        <textarea name="supplySeasoning" placeholder="供應商：喬富&#10;供應商：青葉&#10;調味料：鹽巴,喬富&#10;調味料：醬油,青葉"></textarea>
+      </label>
+      <label>食材／菜色
+        <textarea name="ingredientRecipe" placeholder="食材：油麵,喬富,台灣&#10;食材：蘑菇醬,喬富,台灣&#10;菜色：蘑菇麵,500&#10;菜色：咖哩飯"></textarea>
+      </label>
+      <button>批量建立名稱</button>
+      <p class="muted">先大量建立名稱就好。供應商負責人、統編、電話、地址，食材原產地等資料可以之後再補；下載 Excel 前會提醒缺什麼。</p>
+    </form>
     <h2>供應商</h2>
     <form class="card" data-action="addSupplier">
       <label>供應商名稱<input name="name" required></label>
@@ -304,12 +315,100 @@ async function handleSubmit(event) {
     for (const input of form.querySelectorAll("input[name='ingredientIds']:checked")) await put("recipeIngredients", { recipeId, ingredientId: Number(input.value) });
     for (const input of form.querySelectorAll("input[name='seasoningIds']:checked")) await put("recipeSeasonings", { recipeId, seasoningId: Number(input.value) });
   }
+  if (action === "bulkNames") {
+    const counts = await bulkCreate(values, branchId);
+    alert(`已建立：供應商 ${counts.suppliers}、調味料 ${counts.seasonings}、食材 ${counts.ingredients}、菜色 ${counts.recipes}`);
+  }
   if (action === "downloadOfficial") {
     await downloadOfficial(form);
     return;
   }
   form.reset();
   await render();
+}
+
+async function bulkCreate(values, branchId) {
+  const data = await dataBundle();
+  const counts = { suppliers: 0, seasonings: 0, ingredients: 0, recipes: 0 };
+  const supplierByName = new Map(data.suppliers.filter(item => sameScope(item.branchId, branchId)).map(item => [normalizeName(item.name), item]));
+  const ingredientNames = new Set(data.ingredients.filter(item => sameScope(item.branchId, branchId)).map(item => normalizeName(item.ingredientName)));
+  const seasoningNames = new Set(data.seasonings.filter(item => sameScope(item.branchId, branchId)).map(item => normalizeName(item.name)));
+  const recipeNames = new Set(data.recipes.filter(item => sameScope(item.branchId, branchId)).map(item => normalizeName(item.name)));
+
+  for (const item of parseBulkLines(values.supplySeasoning, "供應商")) {
+    if (item.type === "供應商") {
+      const name = item.parts[0];
+      if (!name || supplierByName.has(normalizeName(name))) continue;
+      const supplier = { branchId, name, owner: item.parts[1] || "", taxId: item.parts[2] || "", phone: item.parts[3] || "", address: item.parts[4] || "" };
+      supplier.id = await put("suppliers", supplier);
+      supplierByName.set(normalizeName(name), supplier);
+      counts.suppliers += 1;
+    }
+    if (item.type === "調味料") {
+      const name = item.parts[0];
+      if (!name || seasoningNames.has(normalizeName(name))) continue;
+      const supplier = await ensureSupplier(item.parts[1], branchId, supplierByName);
+      await put("seasonings", { branchId, name, supplierId: supplier?.id ? Number(supplier.id) : null });
+      seasoningNames.add(normalizeName(name));
+      counts.seasonings += 1;
+    }
+  }
+
+  for (const item of parseBulkLines(values.ingredientRecipe, "食材")) {
+    if (item.type === "食材") {
+      const name = item.parts[0];
+      if (!name || ingredientNames.has(normalizeName(name))) continue;
+      const supplier = await ensureSupplier(item.parts[1], branchId, supplierByName);
+      await put("ingredients", { branchId, ingredientName: name, productName: item.parts[3] || name, origin: item.parts[2] || "", supplierId: supplier?.id ? Number(supplier.id) : null });
+      ingredientNames.add(normalizeName(name));
+      counts.ingredients += 1;
+    }
+    if (item.type === "菜色") {
+      const name = item.parts[0];
+      if (!name || recipeNames.has(normalizeName(name))) continue;
+      await put("recipes", { branchId, name, calories: Number(item.parts[1] || 0) });
+      recipeNames.add(normalizeName(name));
+      counts.recipes += 1;
+    }
+  }
+  return counts;
+}
+
+function parseBulkLines(text, defaultType) {
+  return String(text || "").split(/\r?\n/).map(raw => raw.trim()).filter(Boolean).map(raw => {
+    const prefix = raw.match(/^([^:：]+)[:：](.*)$/);
+    const type = normalizeBulkType(prefix ? prefix[1] : defaultType);
+    const body = prefix ? prefix[2] : raw;
+    const parts = body.split(/[,\t，]/).map(part => part.trim()).filter(Boolean);
+    return { type, parts };
+  });
+}
+
+function normalizeBulkType(type) {
+  const value = normalizeName(type);
+  if (["廠商", "供應商"].includes(value)) return "供應商";
+  if (["調味料", "調味"].includes(value)) return "調味料";
+  if (["食材", "材料"].includes(value)) return "食材";
+  if (["菜色", "菜單", "餐點"].includes(value)) return "菜色";
+  return type;
+}
+
+async function ensureSupplier(name, branchId, supplierByName) {
+  const key = normalizeName(name);
+  if (!key) return null;
+  if (supplierByName.has(key)) return supplierByName.get(key);
+  const supplier = { branchId, name, owner: "", taxId: "", phone: "", address: "" };
+  supplier.id = await put("suppliers", supplier);
+  supplierByName.set(key, supplier);
+  return supplier;
+}
+
+function sameScope(itemBranchId, branchId) {
+  return String(itemBranchId || "") === String(branchId || "");
+}
+
+function normalizeName(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
 async function exportBackup() {
