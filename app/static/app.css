@@ -35,4 +35,24 @@ button,.btn{background:#111;color:#fff;border:0;text-decoration:none;text-align:
 .bulk-table th{background:#f8fafc;font-size:14px}
 .bulk-table input,.bulk-table select{min-width:140px;padding:9px}
 .bulk-table tr.needs-work{background:#fffaf0}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0;color:#4b5563;font-size:13px}
+.legend span{display:flex;align-items:center;gap:5px}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;background:#d1d5db}
+.dot.done{background:#16a34a}
+.dot.missing{background:#dc2626}
+.dot.skipped{background:#64748b}
+.dot.weekend{background:#94a3b8}
+.calendar-form{display:grid;gap:12px}
+.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.calendar-head{color:#6b7280;font-size:13px;text-align:center}
+.calendar-empty{min-height:58px}
+.calendar-day{min-height:68px;border:1px solid #d1d5db;border-radius:8px;padding:7px;display:grid;align-content:space-between;gap:3px;font-weight:700;background:#fff}
+.calendar-day input{width:auto;margin:0}
+.calendar-day .day-number{font-size:18px;line-height:1}
+.calendar-day small{font-size:11px;color:inherit}
+.calendar-day.done{background:#dcfce7;border-color:#86efac;color:#14532d}
+.calendar-day.missing{background:#fee2e2;border-color:#fca5a5;color:#7f1d1d}
+.calendar-day.closed{background:#e2e8f0;border-color:#94a3b8;color:#334155}
+.calendar-day.weekend{background:#f1f5f9;border-color:#cbd5e1;color:#475569}
+.calendar-day:has(input:checked){outline:3px solid #111;outline-offset:1px}
 @media(min-width:640px){.grid{grid-template-columns:1fr 1fr}}

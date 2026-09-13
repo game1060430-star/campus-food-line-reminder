@@ -4,6 +4,7 @@
 <div class="notice"><b>提醒判斷</b><br>下載 Excel 不代表已上傳。只有在這裡按「我已上傳」後，LINE 提醒才會把該日期視為完成。六日不提醒。</div>
 {% if notice == 'confirmed' %}<div class="notice"><b>已記錄。</b><br>這個日期範圍已標記為已上傳。</div>{% endif %}
 {% if notice == 'closed' %}<div class="notice"><b>已設定。</b><br>這個日期範圍已標記為不提醒。</div>{% endif %}
+{% if notice == 'opened' %}<div class="notice"><b>已恢復。</b><br>選取日期已取消不提醒。</div>{% endif %}
 
 <form method="get" class="card form">
   <label>分店
@@ -14,6 +15,47 @@
   <label>查看起始日<input type="date" name="date" value="{{selected_date}}" required></label>
   <button>查看狀態</button>
 </form>
+
+<section class="card">
+  <div class="row">
+    <a class="btn secondary" href="/uploads?branch_id={{selected_branch_id}}&date={{previous_month.isoformat()}}">上個月</a>
+    <b>{{month_start.strftime('%Y-%m')}}</b>
+    <a class="btn secondary" href="/uploads?branch_id={{selected_branch_id}}&date={{next_month.isoformat()}}">下個月</a>
+  </div>
+  <div class="legend">
+    <span><i class="dot done"></i>已上傳</span>
+    <span><i class="dot missing"></i>未上傳</span>
+    <span><i class="dot skipped"></i>不提醒</span>
+    <span><i class="dot weekend"></i>六日</span>
+  </div>
+  <form method="post" action="/uploads/calendar" class="calendar-form">
+    <input type="hidden" name="branch_id" value="{{selected_branch_id}}">
+    <input type="hidden" name="month_date" value="{{month_start.isoformat()}}">
+    <div class="calendar-grid calendar-head">
+      <b>一</b><b>二</b><b>三</b><b>四</b><b>五</b><b>六</b><b>日</b>
+    </div>
+    <div class="calendar-grid">
+      {% for _ in range(calendar_offset) %}<span class="calendar-empty"></span>{% endfor %}
+      {% for day in calendar_days %}
+      {% set key = (selected_branch_id, day) %}
+      {% set item = confirmations.get(key) %}
+      {% set closed = closed_dates.get(key) %}
+      {% set cls = 'closed' if closed else 'weekend' if day.weekday() >= 5 else 'done' if item else 'missing' %}
+      <label class="calendar-day {{cls}}">
+        <input type="checkbox" name="dates" value="{{day.isoformat()}}">
+        <span class="day-number">{{day.day}}</span>
+        <small>{% if closed %}不提醒{% elif item %}已上傳{% elif day.weekday() >= 5 %}六日{% else %}未上傳{% endif %}</small>
+      </label>
+      {% endfor %}
+    </div>
+    <label>不提醒原因<input name="reason" placeholder="例如：店休、國定假日、臨時公休"></label>
+    <div class="actions">
+      <button name="calendar_action" value="closed">選取日期不提醒</button>
+      <button name="calendar_action" value="open" class="secondary">取消不提醒</button>
+      <button name="calendar_action" value="confirmed" class="secondary">標記已上傳</button>
+    </div>
+  </form>
+</section>
 
 <form method="post" action="/uploads/confirm" class="card form">
   <h2>我已上傳</h2>

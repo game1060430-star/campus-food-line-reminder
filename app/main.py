@@ -296,6 +296,13 @@ def set_closed_dates(db:Session, branch_id:int, dates:list[date], reason:str="")
     db.commit()
     return count
 
+def clear_closed_dates(db:Session, branch_id:int, dates:list[date]) -> int:
+    items=db.scalars(select(ClosedDate).where(ClosedDate.branch_id==branch_id, ClosedDate.service_date.in_(dates))).all()
+    for item in items:
+        db.delete(item)
+    db.commit()
+    return len(items)
+
 @app.middleware("http")
 async def require_web_access(request:Request, call_next):
     path=request.url.path
@@ -507,18 +514,24 @@ def uploads_page(request:Request, branch_id:int|None=None, date:str|None=None, d
     selected_date=date or date_today_iso()
     start=date_from_iso(selected_date)
     days=[start+timedelta(days=i) for i in range(14)]
+    month_start=start.replace(day=1)
+    next_month=(month_start.replace(day=28)+timedelta(days=4)).replace(day=1)
+    month_end=next_month-timedelta(days=1)
+    calendar_days=[month_start+timedelta(days=i) for i in range((month_end-month_start).days+1)]
+    previous_month=(month_start-timedelta(days=1)).replace(day=1)
     confirmations={
         (c.branch_id,c.service_date): c
-        for c in db.scalars(select(UploadConfirmation).where(UploadConfirmation.service_date.in_(days))).all()
+        for c in db.scalars(select(UploadConfirmation).where(UploadConfirmation.service_date.in_(calendar_days+days))).all()
     }
     closed_dates={
         (c.branch_id,c.service_date): c
-        for c in db.scalars(select(ClosedDate).where(ClosedDate.service_date.in_(days))).all()
+        for c in db.scalars(select(ClosedDate).where(ClosedDate.service_date.in_(calendar_days+days))).all()
     }
     menu_counts={}
-    for item in db.scalars(select(DailyMenu).where(DailyMenu.service_date.in_(days))).all():
+    for item in db.scalars(select(DailyMenu).where(DailyMenu.service_date.in_(calendar_days+days))).all():
         menu_counts[(item.branch_id,item.service_date)]=menu_counts.get((item.branch_id,item.service_date),0)+1
-    return templates.TemplateResponse("uploads.html",{"request":request,"branches":branches,"selected_branch_id":selected_branch_id,"selected_date":selected_date,"days":days,"confirmations":confirmations,"closed_dates":closed_dates,"menu_counts":menu_counts,"notice":request.query_params.get("notice")})
+    calendar_offset=month_start.weekday()
+    return templates.TemplateResponse("uploads.html",{"request":request,"branches":branches,"selected_branch_id":selected_branch_id,"selected_date":selected_date,"days":days,"calendar_days":calendar_days,"calendar_offset":calendar_offset,"month_start":month_start,"previous_month":previous_month,"next_month":next_month,"confirmations":confirmations,"closed_dates":closed_dates,"menu_counts":menu_counts,"notice":request.query_params.get("notice")})
 
 def date_today_iso() -> str:
     return date.today().isoformat()
@@ -539,6 +552,26 @@ def mark_closed_dates(branch_id:int=Form(...), start_date:date=Form(...), end_da
     dates=service_dates(start_date,end_date,parse_weekdays(weekdays),excluded)
     set_closed_dates(db,branch_id,dates,reason)
     return RedirectResponse(f"/uploads?branch_id={branch_id}&date={start_date.isoformat()}&notice=closed",303)
+
+@app.post("/uploads/calendar")
+async def update_upload_calendar(request:Request, db:Session=Depends(get_db)):
+    form=await request.form()
+    branch_id=int(form.get("branch_id") or 0)
+    action=str(form.get("calendar_action") or "")
+    selected=[date.fromisoformat(str(value)) for value in form.getlist("dates")]
+    month_date=str(form.get("month_date") or date_today_iso())
+    if selected and action=="closed":
+        set_closed_dates(db,branch_id,selected,str(form.get("reason") or "行事曆設定休息"))
+        notice="closed"
+    elif selected and action=="open":
+        clear_closed_dates(db,branch_id,selected)
+        notice="opened"
+    elif selected and action=="confirmed":
+        confirm_upload_dates(db,branch_id,selected,"網頁行事曆","")
+        notice="confirmed"
+    else:
+        notice="none"
+    return RedirectResponse(f"/uploads?branch_id={branch_id}&date={month_date}&notice={notice}",303)
 
 @app.get("/exports/files/{file_path:path}")
 def download_export_file(file_path:str):
