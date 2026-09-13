@@ -8,3 +8,6 @@ exports
 logs
 artifacts
 .tools
+site-*.tar.gz
+.git
+.gitignore

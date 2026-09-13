@@ -17,7 +17,7 @@ $env:APP_MODULE="app.line_reminder:app"
 python run.py
 ```
 
-正式雲端部署時也使用同一個入口：
+正式雲端部署時也使用同一個入口。Render 可以使用 `render-line.yaml`，這份設定只會部署 LINE 提醒小服務，不會部署原本電腦端食材整理頁。
 
 ```text
 APP_MODULE=app.line_reminder:app
@@ -68,7 +68,13 @@ https://你的-line-提醒服務網址/login?token=WEB_ACCESS_TOKEN&next=/admin/
 
 ## 定時提醒
 
-每天固定時間呼叫：
+`render-line.yaml` 已包含一個每天 20:00 執行的 cron job：
+
+```text
+python scripts/send_upload_reminders.py
+```
+
+若使用其他雲端，也可以每天固定時間呼叫：
 
 ```text
 POST https://你的-line-提醒服務網址/tasks/upload-reminders
