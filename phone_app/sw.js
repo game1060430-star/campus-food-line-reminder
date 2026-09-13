@@ -1,11 +1,15 @@
-const CACHE = "campus-food-local-v2";
+const CACHE = "campus-food-local-v3";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
   "./manifest.json",
-  "./icon.svg"
+  "./icon.svg",
+  "./templates/PreMenuExcelExample.xlsx",
+  "./templates/PrerestaurantingredientExcelExample.xlsx",
+  "./templates/seasoningstockdataCollegeExcelExample.xlsx",
+  "./templates/supplierExcelExample.xlsx"
 ];
 
 self.addEventListener("install", event => {

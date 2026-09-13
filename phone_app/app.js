@@ -16,6 +16,12 @@ const LABELS = {
   recipeSeasonings: "菜色調味料",
   uploadConfirmations: "上傳確認"
 };
+const OFFICIAL_TEMPLATES = {
+  menus: { file: "PreMenuExcelExample.xlsx", name: "菜單", cols: 8, required: [1, 2, 3, 4, 6, 8] },
+  ingredients: { file: "PrerestaurantingredientExcelExample.xlsx", name: "食材", cols: 22, required: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
+  seasonings: { file: "seasoningstockdataCollegeExcelExample.xlsx", name: "調味料", cols: 20, required: [1, 2, 3, 4, 5, 8, 9, 10] },
+  suppliers: { file: "supplierExcelExample.xlsx", name: "供應商", cols: 5, required: [1, 2, 3, 4, 5] }
+};
 
 let db;
 let state = { view: "home", branchId: "" };
@@ -30,9 +36,7 @@ function openDb() {
     request.onupgradeneeded = () => {
       const database = request.result;
       for (const store of STORES) {
-        if (!database.objectStoreNames.contains(store)) {
-          database.createObjectStore(store, { keyPath: "id", autoIncrement: true });
-        }
+        if (!database.objectStoreNames.contains(store)) database.createObjectStore(store, { keyPath: "id", autoIncrement: true });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -76,16 +80,16 @@ function clearStore(store) {
   });
 }
 
-function uid() {
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
 function html(strings, ...values) {
   return strings.map((part, index) => `${part}${values[index] ?? ""}`).join("");
 }
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+}
+
+function escapeXml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" }[char]));
 }
 
 function activeBranchName(branches) {
@@ -96,6 +100,10 @@ function activeBranchName(branches) {
 function availableForScope(items) {
   if (!state.branchId) return items.filter(item => !item.branchId);
   return items.filter(item => !item.branchId || String(item.branchId) === String(state.branchId));
+}
+
+function availableForBranch(items, branchId) {
+  return items.filter(item => !item.branchId || String(item.branchId) === String(branchId));
 }
 
 async function dataBundle() {
@@ -111,6 +119,7 @@ async function render() {
   if (state.view === "home") app.innerHTML = renderHome(data);
   if (state.view === "masters") app.innerHTML = renderMasters(data);
   if (state.view === "recipes") app.innerHTML = renderRecipes(data);
+  if (state.view === "exports") app.innerHTML = renderExports(data);
   if (state.view === "backup") app.innerHTML = renderBackup(data);
 }
 
@@ -133,6 +142,7 @@ function renderHome(data) {
       <div class="actions">
         <button data-view-go="masters">供應商／食材</button>
         <button data-view-go="recipes" class="secondary">菜色</button>
+        <button data-view-go="exports" class="secondary">下載官方 Excel</button>
         <button data-view-go="backup" class="secondary">備份／還原</button>
       </div>
     </section>
@@ -160,13 +170,13 @@ function renderMasters(data) {
     <h2>供應商</h2>
     <form class="card" data-action="addSupplier">
       <label>供應商名稱<input name="name" required></label>
-      <label>負責人<input name="owner"></label>
-      <label>統編<input name="taxId"></label>
-      <label>電話<input name="phone"></label>
-      <label>地址<input name="address"></label>
+      <label>負責人<input name="owner" required></label>
+      <label>統編<input name="taxId" required></label>
+      <label>電話<input name="phone" required></label>
+      <label>地址<input name="address" required></label>
       <button>新增供應商</button>
     </form>
-    <div class="card">${listRows(suppliers, item => `${item.name}<br><small>${item.phone || "待補電話"}</small>`, "suppliers")}</div>
+    <div class="card">${listRows(suppliers, item => `${item.name}<br><small>${item.phone || "待補電話"}／${supplierUsage(data, item.id)} 樣食材</small>`, "suppliers")}</div>
     <h2>食材</h2>
     <form class="card" data-action="addIngredient">
       <label>食材名稱<input name="ingredientName" required></label>
@@ -204,6 +214,35 @@ function renderRecipes(data) {
     <div class="card">${recipes.length ? recipes.map(recipe => recipeRow(recipe, data)).join("") : `<div class="empty">尚未建立菜色</div>`}</div>`;
 }
 
+function renderExports(data) {
+  const activeBranch = data.branches.find(branch => String(branch.id) === String(state.branchId));
+  const branchId = activeBranch?.id || data.branches[0]?.id || "";
+  const recipes = branchId ? availableForBranch(data.recipes, branchId) : [];
+  const today = new Date().toISOString().slice(0, 10);
+  const nextMonth = addDays(new Date(), 30).toISOString().slice(0, 10);
+  return html`
+    <h1>下載官方 Excel</h1>
+    <div class="notice"><b>這裡只產生 Excel，不連官方網站。</b><br>下載後你再用手機或電腦手動上傳。檔案會各自下載，不會包成 ZIP。</div>
+    <form class="card" data-action="downloadOfficial">
+      <label>分店
+        <select name="branchId" required>
+          ${data.branches.map(b => `<option value="${b.id}" ${String(branchId) === String(b.id) ? "selected" : ""}>${escapeHtml(b.name)}</option>`).join("")}
+        </select>
+      </label>
+      <label>開始日期<input name="startDate" type="date" required value="${today}"></label>
+      <label>結束日期<input name="endDate" type="date" required value="${nextMonth}"></label>
+      <h2>要產生哪些檔案</h2>
+      <label class="check"><input type="checkbox" name="fileTypes" value="menus" checked><span>菜單 Excel</span></label>
+      <label class="check"><input type="checkbox" name="fileTypes" value="ingredients" checked><span>食材 Excel</span></label>
+      <label class="check"><input type="checkbox" name="fileTypes" value="seasonings"><span>調味料 Excel</span></label>
+      <label class="check"><input type="checkbox" name="fileTypes" value="suppliers"><span>供應商 Excel</span></label>
+      <h2>菜色</h2>
+      ${recipes.map(recipe => `<label class="check"><input type="checkbox" name="recipeIds" value="${recipe.id}" checked><span>${escapeHtml(recipe.name)}</span></label>`).join("") || `<p class="muted">這個分店還沒有菜色</p>`}
+      <button>產生並下載</button>
+      <div id="downloadResult"></div>
+    </form>`;
+}
+
 function renderBackup(data) {
   return html`
     <h1>備份／還原</h1>
@@ -230,6 +269,10 @@ function recipeRow(recipe, data) {
 
 function supplierName(suppliers, id) {
   return suppliers.find(s => Number(s.id) === Number(id))?.name || "待補供應商";
+}
+
+function supplierUsage(data, id) {
+  return data.ingredients.filter(item => Number(item.supplierId) === Number(id)).length;
 }
 
 function formValues(form) {
@@ -260,6 +303,10 @@ async function handleSubmit(event) {
     const recipeId = await put("recipes", { branchId, name: values.name, calories: Number(values.calories || 0) });
     for (const input of form.querySelectorAll("input[name='ingredientIds']:checked")) await put("recipeIngredients", { recipeId, ingredientId: Number(input.value) });
     for (const input of form.querySelectorAll("input[name='seasoningIds']:checked")) await put("recipeSeasonings", { recipeId, seasoningId: Number(input.value) });
+  }
+  if (action === "downloadOfficial") {
+    await downloadOfficial(form);
+    return;
   }
   form.reset();
   await render();
@@ -294,6 +341,228 @@ async function importBackup(file) {
   }
   alert("備份已匯入");
   await render();
+}
+
+async function downloadOfficial(form) {
+  if (!window.JSZip) {
+    alert("Excel 下載元件尚未載入，請確認有網路後重新整理一次。");
+    return;
+  }
+  const result = document.getElementById("downloadResult");
+  result.innerHTML = `<div class="notice">正在整理資料...</div>`;
+  const data = await dataBundle();
+  const formData = new FormData(form);
+  const branchId = Number(formData.get("branchId"));
+  const branch = data.branches.find(item => Number(item.id) === branchId);
+  const fileTypes = formData.getAll("fileTypes");
+  const recipeIds = new Set(formData.getAll("recipeIds").map(Number));
+  const startDate = formData.get("startDate");
+  const endDate = formData.get("endDate");
+  const problems = validateDownload(data, branch, fileTypes, recipeIds, startDate, endDate);
+  if (problems.length) {
+    result.innerHTML = `<div class="notice"><b>先補完這些資料：</b><ul class="warning-list">${problems.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`;
+    return;
+  }
+  const officialRows = buildOfficialRows(data, branch, recipeIds, startDate, endDate);
+  for (const type of fileTypes) {
+    await writeOfficialWorkbook(type, officialRows[type], `${branch.name}_${OFFICIAL_TEMPLATES[type].name}_${startDate}_到_${endDate}.xlsx`);
+  }
+  result.innerHTML = `<div class="notice">已產生 ${fileTypes.length} 個 Excel。若手機瀏覽器擋住多檔下載，請再按一次或改成一次只勾一種檔案。</div>`;
+}
+
+function validateDownload(data, branch, fileTypes, recipeIds, startDate, endDate) {
+  const problems = [];
+  if (!branch) problems.push("請先選擇分店。");
+  if (!startDate || !endDate || startDate > endDate) problems.push("日期區間不正確。");
+  if (!fileTypes.length) problems.push("請至少勾選一種 Excel。");
+  const recipes = availableForBranch(data.recipes, branch?.id).filter(recipe => recipeIds.has(Number(recipe.id)));
+  if ((fileTypes.includes("menus") || fileTypes.includes("ingredients")) && !recipes.length) problems.push("請至少選一個菜色。");
+  for (const field of ["schoolName", "serviceLocation", "restaurantName"]) {
+    if (branch && !branch[field]) problems.push(`分店「${branch.name}」缺少${fieldLabel(field)}。`);
+  }
+  if (fileTypes.includes("ingredients")) {
+    const ingredientIds = usedIngredientIds(data, recipes);
+    for (const id of ingredientIds) {
+      const ingredient = data.ingredients.find(item => Number(item.id) === Number(id));
+      const supplier = data.suppliers.find(item => Number(item.id) === Number(ingredient?.supplierId));
+      if (!ingredient?.ingredientName || !ingredient?.productName || !ingredient?.origin) problems.push(`食材「${ingredient?.ingredientName || id}」缺少產品名稱、食材名稱或原產地。`);
+      if (!supplier) problems.push(`食材「${ingredient?.ingredientName || id}」缺少供應商。`);
+    }
+  }
+  if (fileTypes.includes("suppliers") || fileTypes.includes("ingredients") || fileTypes.includes("seasonings")) {
+    for (const supplier of availableForBranch(data.suppliers, branch?.id)) {
+      if (!supplier.name || !supplier.owner || !supplier.taxId || !supplier.phone || !supplier.address) problems.push(`供應商「${supplier.name || "未命名"}」負責人、統編、電話、地址都要填。`);
+    }
+  }
+  return [...new Set(problems)];
+}
+
+function fieldLabel(field) {
+  return { schoolName: "學校名稱", serviceLocation: "供餐地點", restaurantName: "餐廳名稱" }[field] || field;
+}
+
+function buildOfficialRows(data, branch, recipeIds, startDate, endDate) {
+  const dates = serviceDates(startDate, endDate);
+  const recipes = availableForBranch(data.recipes, branch.id).filter(recipe => recipeIds.has(Number(recipe.id)));
+  const seasoningIds = usedSeasoningIds(data, recipes);
+  const suppliers = availableForBranch(data.suppliers, branch.id);
+  const rows = { menus: [], ingredients: [], seasonings: [], suppliers: [] };
+  for (const date of dates) {
+    for (const recipe of recipes) {
+      rows.menus.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, date, "", recipe.name, "", Number(recipe.calories || 0)]);
+      for (const link of data.recipeIngredients.filter(item => Number(item.recipeId) === Number(recipe.id))) {
+        const ingredient = data.ingredients.find(item => Number(item.id) === Number(link.ingredientId));
+        const supplier = data.suppliers.find(item => Number(item.id) === Number(ingredient?.supplierId));
+        rows.ingredients.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, date, previousWorkday(date), ingredient?.productName || "", ingredient?.ingredientName || "", ingredient?.origin || "", supplier?.name || ""]);
+      }
+    }
+  }
+  for (const id of seasoningIds) {
+    const seasoning = data.seasonings.find(item => Number(item.id) === Number(id));
+    const supplier = data.suppliers.find(item => Number(item.id) === Number(seasoning?.supplierId));
+    rows.seasonings.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, seasoning?.name || "", previousWorkday(startDate), "", "", startDate, endDate, supplier?.name || ""]);
+  }
+  for (const supplier of suppliers) rows.suppliers.push([supplier.name, supplier.owner, supplier.taxId, supplier.address, supplier.phone]);
+  return rows;
+}
+
+function usedIngredientIds(data, recipes) {
+  const recipeIds = new Set(recipes.map(recipe => Number(recipe.id)));
+  return [...new Set(data.recipeIngredients.filter(item => recipeIds.has(Number(item.recipeId))).map(item => Number(item.ingredientId)))];
+}
+
+function usedSeasoningIds(data, recipes) {
+  const recipeIds = new Set(recipes.map(recipe => Number(recipe.id)));
+  return [...new Set(data.recipeSeasonings.filter(item => recipeIds.has(Number(item.recipeId))).map(item => Number(item.seasoningId)))];
+}
+
+function serviceDates(startDate, endDate) {
+  const dates = [];
+  for (let date = parseLocalDate(startDate); date <= parseLocalDate(endDate); date = addDays(date, 1)) {
+    const day = date.getDay();
+    if (day !== 0 && day !== 6) dates.push(formatDate(date));
+  }
+  return dates;
+}
+
+function previousWorkday(dateText) {
+  let date = addDays(parseLocalDate(dateText), -1);
+  while (date.getDay() === 0 || date.getDay() === 6) date = addDays(date, -1);
+  return formatDate(date);
+}
+
+function parseLocalDate(dateText) {
+  const [year, month, day] = String(dateText).split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function formatDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function excelSerial(dateText) {
+  const date = parseLocalDate(dateText);
+  return Math.round((Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) - Date.UTC(1899, 11, 30)) / 86400000);
+}
+
+async function writeOfficialWorkbook(type, rows, filename) {
+  const template = OFFICIAL_TEMPLATES[type];
+  const response = await fetch(`./templates/${template.file}`);
+  if (!response.ok) throw new Error(`找不到範本：${template.file}`);
+  const zip = await JSZip.loadAsync(await response.arrayBuffer());
+  let sheetXml = await zip.file("xl/worksheets/sheet1.xml").async("string");
+  let sharedXml = await zip.file("xl/sharedStrings.xml").async("string");
+  const shared = appendSharedStrings(sharedXml);
+  const styleByCol = extractRowStyles(sheetXml, 2);
+  const row1 = sheetXml.match(/<row\b[^>]*\br="1"[\s\S]*?<\/row>/)?.[0] || "";
+  const dataRows = rows.map((row, index) => rowXml(index + 2, row, template, styleByCol, shared.add)).join("");
+  const lastRow = Math.max(1, rows.length + 1);
+  sheetXml = sheetXml.replace(/<dimension ref="[^"]*"/, `<dimension ref="A1:${colName(template.cols)}${lastRow}"`);
+  sheetXml = sheetXml.replace(/<sheetData>[\s\S]*?<\/sheetData>/, `<sheetData>${row1}${dataRows}</sheetData>`);
+  zip.file("xl/worksheets/sheet1.xml", sheetXml);
+  zip.file("xl/sharedStrings.xml", shared.finish());
+  const blob = await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  saveBlob(blob, filename);
+}
+
+function appendSharedStrings(sharedXml) {
+  let xml = sharedXml;
+  const strings = [];
+  return {
+    add(value) {
+      const index = countSharedStrings(xml) + strings.length;
+      strings.push(`<si><t>${escapeXml(value)}</t></si>`);
+      return index;
+    },
+    finish() {
+      xml = xml.replace("</sst>", `${strings.join("")}</sst>`);
+      const total = countSharedStrings(xml);
+      xml = xml.replace(/\bcount="[^"]*"/, `count="${total}"`).replace(/\buniqueCount="[^"]*"/, `uniqueCount="${total}"`);
+      return xml;
+    }
+  };
+}
+
+function countSharedStrings(sharedXml) {
+  return (sharedXml.match(/<si>/g) || []).length;
+}
+
+function extractRowStyles(sheetXml, rowNumber) {
+  const styles = {};
+  const row = sheetXml.match(new RegExp(`<row\\b[^>]*\\br="${rowNumber}"[\\s\\S]*?<\\/row>`))?.[0] || "";
+  for (const match of row.matchAll(/<c\b([^>]*)\/?>/g)) {
+    const ref = match[1].match(/\br="([A-Z]+)\d+"/)?.[1];
+    const style = match[1].match(/\bs="([^"]+)"/)?.[1];
+    if (ref && style) styles[ref] = style;
+  }
+  return styles;
+}
+
+function rowXml(rowNumber, row, template, styleByCol, sharedAdd) {
+  const cells = [];
+  for (let index = 0; index < template.cols; index += 1) {
+    const col = index + 1;
+    if (!template.required.includes(col)) continue;
+    const value = row[index];
+    if (value === "" || value === undefined || value === null) continue;
+    cells.push(cellXml(colName(col), rowNumber, value, styleByCol[colName(col)], sharedAdd));
+  }
+  return `<row r="${rowNumber}" spans="1:${template.cols}">${cells.join("")}</row>`;
+}
+
+function cellXml(col, rowNumber, value, style, sharedAdd) {
+  const styleAttr = style ? ` s="${style}"` : "";
+  if (isDateString(value)) return `<c r="${col}${rowNumber}"${styleAttr}><v>${excelSerial(value)}</v></c>`;
+  if (typeof value === "number" && Number.isFinite(value)) return `<c r="${col}${rowNumber}"${styleAttr}><v>${value}</v></c>`;
+  const sharedIndex = sharedAdd(value);
+  return `<c r="${col}${rowNumber}" t="s"${styleAttr}><v>${sharedIndex}</v></c>`;
+}
+
+function isDateString(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function colName(number) {
+  let name = "";
+  for (let n = number; n > 0; n = Math.floor((n - 1) / 26)) name = String.fromCharCode(((n - 1) % 26) + 65) + name;
+  return name;
+}
+
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 document.addEventListener("submit", handleSubmit);
