@@ -17,7 +17,7 @@ const LABELS = {
   uploadConfirmations: "上傳確認"
 };
 const OFFICIAL_TEMPLATES = {
-  menus: { file: "PreMenuExcelExample.xlsx", name: "菜單", cols: 8, required: [1, 2, 3, 4, 6, 8] },
+  menus: { file: "PreMenuExcelExample.xlsx", name: "菜單", cols: 8, required: [1, 2, 3, 4, 6, 7, 8] },
   ingredients: { file: "PrerestaurantingredientExcelExample.xlsx", name: "食材", cols: 22, required: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
   seasonings: { file: "seasoningstockdataCollegeExcelExample.xlsx", name: "調味料", cols: 20, required: [1, 2, 3, 4, 5, 8, 9, 10] },
   suppliers: { file: "supplierExcelExample.xlsx", name: "供應商", cols: 5, required: [1, 2, 3, 4, 5] }
@@ -67,7 +67,9 @@ function all(store) {
 
 function put(store, value) {
   return new Promise((resolve, reject) => {
-    const request = tx(store, "readwrite").put({ ...value, updatedAt: new Date().toISOString() });
+    const nextValue = { ...value, updatedAt: new Date().toISOString() };
+    if (nextValue.id === undefined || nextValue.id === null || nextValue.id === "") delete nextValue.id;
+    const request = tx(store, "readwrite").put(nextValue);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
@@ -829,12 +831,12 @@ async function importOfficialWorkbook(file, type) {
   const data = await dataBundle();
   const rows = officialRows(workbook, type);
   const errors = [];
-  let created = 0;
-  if (type === "suppliers") created = await importOfficialSuppliers(rows, branchId, data, errors);
-  if (type === "ingredients") created = await importOfficialIngredients(rows, branchId, data, errors);
-  if (type === "recipes") created = await importOfficialRecipes(rows, branchId, data);
-  if (type === "seasonings") created = await importOfficialSeasonings(rows, branchId, data, errors);
-  return { created, errors };
+  let result = { created: 0, updated: 0 };
+  if (type === "suppliers") result = await importOfficialSuppliers(rows, branchId, data, errors);
+  if (type === "ingredients") result = await importOfficialIngredients(rows, branchId, data, errors);
+  if (type === "recipes") result = await importOfficialRecipes(rows, branchId, data);
+  if (type === "seasonings") result = await importOfficialSeasonings(rows, branchId, data, errors);
+  return { ...result, errors };
 }
 
 function officialRows(workbook, type) {
@@ -845,11 +847,12 @@ function officialRows(workbook, type) {
 
 async function importOfficialSuppliers(rows, branchId, data, errors) {
   let created = 0;
-  const existing = new Set(data.suppliers.filter(item => sameScopeForImport(item, branchId)).map(item => normalizeName(item.name)));
+  let updated = 0;
+  const existing = new Map(data.suppliers.filter(item => sameScopeForImport(item, branchId)).map(item => [normalizeName(item.name), item]));
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
     const name = cleanCell(row[0]);
-    if (!name || existing.has(normalizeName(name))) continue;
+    if (!name) continue;
     const owner = cleanCell(row[1]);
     const taxId = cleanCell(row[2]);
     const address = cleanCell(row[3]);
@@ -858,67 +861,86 @@ async function importOfficialSuppliers(rows, branchId, data, errors) {
       errors.push(`第 ${index + 2} 列供應商「${name}」缺少負責人、統編、地址或電話，已略過。`);
       continue;
     }
-    await put("suppliers", { ...importScope(branchId), name, owner, taxId, address, phone, deliveryWeekdays: "" });
-    existing.add(normalizeName(name));
-    created += 1;
+    const old = existing.get(normalizeName(name));
+    await put("suppliers", { ...(old || {}), ...importScope(branchId), id: old?.id, name, owner, taxId, address, phone, deliveryWeekdays: old?.deliveryWeekdays || "" });
+    if (old) updated += 1;
+    else {
+      existing.set(normalizeName(name), { name });
+      created += 1;
+    }
   }
-  return created;
+  return { created, updated };
 }
 
 async function importOfficialIngredients(rows, branchId, data, errors) {
   let created = 0;
+  let updated = 0;
   const suppliers = await all("suppliers");
   const supplierByName = new Map(suppliers.map(item => [normalizeName(item.name), item]));
-  const existing = new Set(data.ingredients.filter(item => sameScopeForImport(item, branchId)).map(item => normalizeName(item.ingredientName)));
+  const existing = new Map(data.ingredients.filter(item => sameScopeForImport(item, branchId)).map(item => [normalizeName(item.ingredientName), item]));
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
     const productName = cleanCell(row[5]);
     const ingredientName = cleanCell(row[6]) || productName;
     const origin = cleanCell(row[7]) || "臺灣";
     const supplierName = cleanCell(row[8]);
-    if (!ingredientName || existing.has(normalizeName(ingredientName))) continue;
+    if (!ingredientName) continue;
     const supplier = supplierByName.get(normalizeName(supplierName));
     if (supplierName && !supplier) errors.push(`第 ${index + 2} 列食材「${ingredientName}」找不到供應商「${supplierName}」，已先建成待補供應商。`);
-    await put("ingredients", { ...importScope(branchId), ingredientName, productName: productName || ingredientName, origin, supplierId: supplier?.id ? Number(supplier.id) : null });
-    existing.add(normalizeName(ingredientName));
-    created += 1;
+    const old = existing.get(normalizeName(ingredientName));
+    await put("ingredients", { ...(old || {}), ...importScope(branchId), id: old?.id, ingredientName, productName: productName || ingredientName, origin, supplierId: supplier?.id ? Number(supplier.id) : null });
+    if (old) updated += 1;
+    else {
+      existing.set(normalizeName(ingredientName), { ingredientName });
+      created += 1;
+    }
   }
-  return created;
+  return { created, updated };
 }
 
 async function importOfficialRecipes(rows, branchId, data) {
   let created = 0;
-  const existing = new Set(data.recipes.filter(item => sameScopeForImport(item, branchId)).map(item => normalizeName(item.name)));
+  let updated = 0;
+  const existing = new Map(data.recipes.filter(item => sameScopeForImport(item, branchId)).map(item => [normalizeName(item.name), item]));
   for (const row of rows) {
     const name = cleanCell(row[5]);
-    if (!name || existing.has(normalizeName(name))) continue;
-    await put("recipes", { ...importScope(branchId), name, calories: Number(cleanCell(row[7]) || 0) || 0 });
-    existing.add(normalizeName(name));
-    created += 1;
+    if (!name) continue;
+    const old = existing.get(normalizeName(name));
+    await put("recipes", { ...(old || {}), ...importScope(branchId), id: old?.id, name, calories: Number(cleanCell(row[7]) || 0) || 0 });
+    if (old) updated += 1;
+    else {
+      existing.set(normalizeName(name), { name });
+      created += 1;
+    }
   }
-  return created;
+  return { created, updated };
 }
 
 async function importOfficialSeasonings(rows, branchId, data, errors) {
   let created = 0;
+  let updated = 0;
   const suppliers = await all("suppliers");
   const supplierByName = new Map(suppliers.map(item => [normalizeName(item.name), item]));
-  const existing = new Set(data.seasonings.filter(item => sameScopeForImport(item, branchId)).map(item => normalizeName(item.name)));
+  const existing = new Map(data.seasonings.filter(item => sameScopeForImport(item, branchId)).map(item => [normalizeName(item.name), item]));
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
     const name = cleanCell(row[3]);
     const supplierName = cleanCell(row[9]);
-    if (!name || existing.has(normalizeName(name))) continue;
+    if (!name) continue;
     const supplier = supplierByName.get(normalizeName(supplierName));
     if (!supplier) {
       errors.push(`第 ${index + 2} 列調味料「${name}」找不到供應商「${supplierName || "空白"}」，已略過。`);
       continue;
     }
-    await put("seasonings", { ...importScope(branchId), name, supplierId: Number(supplier.id) });
-    existing.add(normalizeName(name));
-    created += 1;
+    const old = existing.get(normalizeName(name));
+    await put("seasonings", { ...(old || {}), ...importScope(branchId), id: old?.id, name, supplierId: Number(supplier.id) });
+    if (old) updated += 1;
+    else {
+      existing.set(normalizeName(name), { name });
+      created += 1;
+    }
   }
-  return created;
+  return { created, updated };
 }
 
 function importScope(branchId) {
@@ -1009,7 +1031,11 @@ function buildOfficialRows(data, branch, recipeIds, startDate, endDate) {
   const rows = { menus: [], ingredients: [], seasonings: [], suppliers: [] };
   for (const date of dates) {
     for (const recipe of recipes) {
-      rows.menus.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, date, "", recipe.name, "", Number(recipe.calories || 0)]);
+      const recipeIngredients = data.recipeIngredients
+        .filter(item => Number(item.recipeId) === Number(recipe.id))
+        .map(link => data.ingredients.find(item => Number(item.id) === Number(link.ingredientId))?.ingredientName)
+        .filter(Boolean);
+      rows.menus.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, date, "", recipe.name, recipeIngredients.join("、"), Number(recipe.calories || 0)]);
       for (const link of data.recipeIngredients.filter(item => Number(item.recipeId) === Number(recipe.id))) {
         const ingredient = data.ingredients.find(item => Number(item.id) === Number(link.ingredientId));
         const supplier = data.suppliers.find(item => Number(item.id) === Number(ingredient?.supplierId));
@@ -1219,7 +1245,7 @@ document.addEventListener("change", async event => {
     try {
       resultBox.innerHTML = `<div class="notice">正在匯入...</div>`;
       const result = await importOfficialWorkbook(event.target.files[0], event.target.dataset.officialImport);
-      alert(`匯入完成：新增 ${result.created} 筆。${result.errors.length ? "\n" + result.errors.join("\n") : ""}`);
+      alert(`匯入完成：新增 ${result.created} 筆，更新 ${result.updated} 筆。${result.errors.length ? "\n" + result.errors.join("\n") : ""}`);
       await render();
     } catch (error) {
       resultBox.innerHTML = `<div class="notice"><b>匯入失敗</b><br>${escapeHtml(error.message || error)}</div>`;
