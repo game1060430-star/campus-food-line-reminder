@@ -390,7 +390,7 @@ def build_export(
     warnings: list[str] = []
     used_supplier_ids: set[int] = set()
     used_seasoning_ids: set[int] = set()
-    used_ingredient_keys: set[tuple[date, int]] = set()
+    used_ingredient_keys: set[tuple[date, int, int | None]] = set()
     used_seasoning_keys: set[int] = set()
 
     menu_rows: list[list] = []
@@ -423,12 +423,12 @@ def build_export(
                 continue
             if supplier and "suppliers" in file_types:
                 used_supplier_ids.add(supplier.id)
-            key = (day, ingredient.id)
+            purchase_date = purchase_date_for(day, supplier)
+            key = (purchase_date, ingredient.id, supplier.id if supplier else None)
             if key in used_ingredient_keys:
                 continue
             used_ingredient_keys.add(key)
             if "ingredients" in file_types:
-                purchase_date = purchase_date_for(day, supplier)
                 ingredient_rows.append([
                 branch.school_name,
                 branch.service_location,

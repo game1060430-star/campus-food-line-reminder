@@ -1,4 +1,4 @@
-const CACHE_NAME = "campus-food-local-v20260914-1";
+const CACHE_NAME = "campus-food-local-v20260914-2";
 const APP_SHELL = [
   "./",
   "./index.html",
