@@ -12,7 +12,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Branch, DailyMenu, LineBindingCode, LineUserBinding, UploadConfirmation
+from .models import Branch, ClosedDate, DailyMenu, LineBindingCode, LineUserBinding, UploadConfirmation
 
 
 LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
@@ -126,6 +126,10 @@ def handle_line_text(text: str, line_user_id: str, db: Session, config: LineConf
         return secure_web_link(config)
     if normalized in {"說明", "help", "Help", "HELP"}:
         return help_text(bindings)
+    if normalized.startswith(("已上傳", "確認上傳", "上傳完成")):
+        return record_upload_confirmation_from_text(normalized, bindings, db)
+    if normalized.startswith(("休息", "休息日", "公休")):
+        return record_closed_dates_from_text(normalized, bindings, db)
     if normalized in {"今日狀態", "狀態", "今天"}:
         return today_status(bindings, db)
     if normalized in {"登錄狀況", "登錄狀況查詢", "上傳查詢", "查詢登錄"} or normalized.startswith("登錄狀況 "):
@@ -184,7 +188,18 @@ def is_admin(bindings: list[LineUserBinding]) -> bool:
 
 
 def help_text(bindings: list[LineUserBinding] | None = None) -> str:
-    lines = ["可用指令：", "綁定 綁定碼", "整理菜單", "上傳確認", "登錄狀況", "食材", "今日狀態", "安全連結", "我的身分"]
+    lines = [
+        "可用指令：",
+        "綁定 綁定碼",
+        "已上傳 店名 2026-09-14 2026-09-18",
+        "休息 店名 2026-09-18 2026-09-20",
+        "登錄狀況 2026-09-14 2026-09-30",
+        "整理菜單",
+        "食材",
+        "今日狀態",
+        "安全連結",
+        "我的身分",
+    ]
     if bindings and is_admin(bindings):
         lines.extend(["管理員說明", "產生店長綁定碼"])
     return "\n".join(lines)
@@ -268,6 +283,119 @@ def parse_status_range(text: str) -> tuple[date, date]:
     return start, end
 
 
+def parse_iso_date(value: str) -> date:
+    return date.fromisoformat(value.replace("/", "-"))
+
+
+def dates_between(start: date, end: date) -> list[date]:
+    if end < start:
+        start, end = end, start
+    days = []
+    current = start
+    while current <= end:
+        days.append(current)
+        current += timedelta(days=1)
+    return days
+
+
+def find_bound_branch(tokens: list[str], bindings: list[LineUserBinding], db: Session) -> tuple[Branch | None, list[str]]:
+    branches = [db.get(Branch, binding.branch_id) for binding in bindings]
+    branches = [branch for branch in branches if branch]
+    if not branches:
+        return None, tokens
+    if len(branches) == 1:
+        if tokens and tokens[0] == branches[0].name:
+            return branches[0], tokens[1:]
+        return branches[0], tokens
+    if not tokens:
+        return None, tokens
+    branch_name = tokens[0]
+    for branch in branches:
+        if branch.name == branch_name:
+            return branch, tokens[1:]
+    return None, tokens
+
+
+def parse_branch_date_command(text: str, bindings: list[LineUserBinding], db: Session) -> tuple[Branch | None, date | None, date | None, str | None]:
+    parts = text.split()
+    if len(parts) < 2:
+        return None, None, None, "格式請用：已上傳 店名 2026-09-14 2026-09-18"
+    tokens = parts[1:]
+    branch, remaining = find_bound_branch(tokens, bindings, db)
+    if not branch:
+        return None, None, None, "找不到這個分店，請確認店名和 LINE 綁定分店一致。"
+    if not remaining:
+        return branch, None, None, "請加上日期，例如：2026-09-14 2026-09-18"
+    try:
+        start = parse_iso_date(remaining[0])
+        end = parse_iso_date(remaining[1]) if len(remaining) >= 2 else start
+    except ValueError:
+        return branch, None, None, "日期格式請用：2026-09-14"
+    return branch, start, end, None
+
+
+def upsert_upload_confirmation(db: Session, branch_id: int, service_date: date, confirmed_by: str, note: str = "") -> None:
+    item = db.scalar(
+        select(UploadConfirmation).where(
+            UploadConfirmation.branch_id == branch_id,
+            UploadConfirmation.service_date == service_date,
+        )
+    )
+    if item:
+        item.confirmed_by = confirmed_by
+        item.note = note or item.note
+    else:
+        db.add(UploadConfirmation(branch_id=branch_id, service_date=service_date, confirmed_by=confirmed_by, note=note or None))
+
+
+def upsert_closed_date(db: Session, branch_id: int, service_date: date, reason: str = "") -> None:
+    item = db.scalar(
+        select(ClosedDate).where(
+            ClosedDate.branch_id == branch_id,
+            ClosedDate.service_date == service_date,
+        )
+    )
+    if item:
+        item.reason = reason or item.reason
+    else:
+        db.add(ClosedDate(branch_id=branch_id, service_date=service_date, reason=reason or "休息"))
+
+
+def record_upload_confirmation_from_text(text: str, bindings: list[LineUserBinding], db: Session) -> str:
+    branch, start, end, error = parse_branch_date_command(text, bindings, db)
+    if error:
+        return error.replace("已上傳", "已上傳")
+    assert branch and start and end
+    days = [day for day in dates_between(start, end) if day.weekday() < 5]
+    closed = {
+        item.service_date
+        for item in db.scalars(
+            select(ClosedDate).where(
+                ClosedDate.branch_id == branch.id,
+                ClosedDate.service_date.in_(days),
+            )
+        ).all()
+    }
+    confirmed = [day for day in days if day not in closed]
+    for day in confirmed:
+        upsert_upload_confirmation(db, branch.id, day, "LINE", "LINE文字確認")
+    db.commit()
+    skipped = len(days) - len(confirmed)
+    return f"已記錄「{branch.name}」{start.isoformat()} ~ {end.isoformat()} 已上傳，共 {len(confirmed)} 天。{'休息日略過 ' + str(skipped) + ' 天。' if skipped else ''}"
+
+
+def record_closed_dates_from_text(text: str, bindings: list[LineUserBinding], db: Session) -> str:
+    branch, start, end, error = parse_branch_date_command(text, bindings, db)
+    if error:
+        return error.replace("已上傳", "休息")
+    assert branch and start and end
+    days = dates_between(start, end)
+    for day in days:
+        upsert_closed_date(db, branch.id, day, "LINE設定休息")
+    db.commit()
+    return f"已記錄「{branch.name}」{start.isoformat()} ~ {end.isoformat()} 休息，共 {len(days)} 天；這些日期不會提醒未上傳。"
+
+
 def upload_confirmation_status(text: str, bindings: list[LineUserBinding], db: Session) -> str:
     try:
         start, end = parse_status_range(text)
@@ -294,6 +422,15 @@ def upload_confirmation_status(text: str, bindings: list[LineUserBinding], db: S
                 )
             ).all()
         }
+        closed = {
+            item.service_date
+            for item in db.scalars(
+                select(ClosedDate).where(
+                    ClosedDate.branch_id == branch.id,
+                    ClosedDate.service_date.in_(days),
+                )
+            ).all()
+        }
         menu_counts: dict[date, int] = {}
         for menu in db.scalars(
             select(DailyMenu).where(
@@ -304,15 +441,18 @@ def upload_confirmation_status(text: str, bindings: list[LineUserBinding], db: S
             menu_counts[menu.service_date] = menu_counts.get(menu.service_date, 0) + 1
 
         uploaded = [d for d in days if d in confirmations]
-        missing = [d for d in days if d.weekday() < 5 and d not in confirmations]
+        missing = [d for d in days if d.weekday() < 5 and d not in confirmations and d not in closed]
         weekends = [d for d in days if d.weekday() >= 5]
+        closed_days = [d for d in days if d in closed]
 
         lines.append(f"\n{branch.name}")
         lines.append(f"已確認：{format_days(uploaded) if uploaded else '無'}")
         lines.append(f"未確認：{format_days(missing) if missing else '無'}")
         if weekends:
             lines.append(f"六日略過：{format_days(weekends)}")
-        no_menu = [d for d in days if d.weekday() < 5 and menu_counts.get(d, 0) == 0]
+        if closed_days:
+            lines.append(f"休息略過：{format_days(closed_days)}")
+        no_menu = [d for d in days if d.weekday() < 5 and d not in closed and menu_counts.get(d, 0) == 0]
         if no_menu:
             lines.append(f"尚未排菜：{format_days(no_menu)}")
     return "\n".join(lines)

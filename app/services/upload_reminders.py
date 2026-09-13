@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..line_bot import LineConfig, push_text, secure_web_url
-from ..models import Branch, DailyMenu, LineUserBinding, UploadConfirmation
+from ..models import Branch, ClosedDate, DailyMenu, LineUserBinding, UploadConfirmation
 
 
 @dataclass
@@ -34,6 +34,16 @@ def send_due_upload_reminders(db: Session, target_date: date | None = None, conf
     errors: list[str] = []
     branches = db.scalars(select(Branch).where(Branch.active == True).order_by(Branch.name)).all()
     for branch in branches:
+        closed = db.scalar(
+            select(ClosedDate).where(
+                ClosedDate.branch_id == branch.id,
+                ClosedDate.service_date == target,
+            )
+        )
+        if closed:
+            messages.append(f"{branch.name} {target.isoformat()} 是休息日，略過提醒。")
+            continue
+
         confirmed = db.scalar(
             select(UploadConfirmation).where(
                 UploadConfirmation.branch_id == branch.id,

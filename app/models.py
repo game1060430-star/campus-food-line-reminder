@@ -126,6 +126,15 @@ class UploadConfirmation(Base):
     confirmed_at = Column(DateTime, server_default=func.now())
     __table_args__ = (UniqueConstraint('branch_id','service_date'),)
 
+class ClosedDate(Base):
+    __tablename__ = "closed_dates"
+    id = Column(Integer, primary_key=True)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=False)
+    service_date = Column(Date, nullable=False)
+    reason = Column(String(120), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    __table_args__ = (UniqueConstraint('branch_id','service_date'),)
+
 class ItemBranchScope(Base):
     __tablename__ = "item_branch_scopes"
     id = Column(Integer, primary_key=True)

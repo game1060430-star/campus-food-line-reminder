@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.line_bot import LineConfig, bind_line_user, handle_line_text, verify_line_signature
-from app.models import Base, Branch, LineBindingCode, LineUserBinding, UploadConfirmation
+from app.models import Base, Branch, ClosedDate, LineBindingCode, LineUserBinding, UploadConfirmation
 
 
 def make_db():
@@ -138,3 +138,51 @@ def test_upload_status_query_reports_confirmed_and_missing_days():
 
     assert "已確認：09/14" in message
     assert "未確認：09/15、09/16" in message
+
+
+def test_line_upload_confirmation_text_records_range():
+    db = make_db()
+    branch = Branch(
+        name="娃子",
+        school_name="A校",
+        service_location="午餐",
+        restaurant_name="A餐廳",
+    )
+    db.add(branch)
+    db.commit()
+    db.add(LineUserBinding(line_user_id="UADMIN", branch_id=branch.id, role="admin"))
+    db.commit()
+    config = LineConfig(channel_secret="", channel_access_token="", app_base_url="https://example.test")
+
+    message = handle_line_text("已上傳 娃子 2026-09-14 2026-09-16", "UADMIN", db, config)
+
+    confirmations = db.query(UploadConfirmation).filter_by(branch_id=branch.id).all()
+    assert "共 3 天" in message
+    assert {item.service_date for item in confirmations} == {
+        date(2026, 9, 14),
+        date(2026, 9, 15),
+        date(2026, 9, 16),
+    }
+
+
+def test_line_closed_dates_are_skipped_in_status():
+    db = make_db()
+    branch = Branch(
+        name="娃子",
+        school_name="A校",
+        service_location="午餐",
+        restaurant_name="A餐廳",
+    )
+    db.add(branch)
+    db.commit()
+    db.add(LineUserBinding(line_user_id="UADMIN", branch_id=branch.id, role="admin"))
+    db.commit()
+    config = LineConfig(channel_secret="", channel_access_token="", app_base_url="https://example.test")
+
+    close_message = handle_line_text("休息 娃子 2026-09-15", "UADMIN", db, config)
+    status_message = handle_line_text("登錄狀況 2026-09-14 2026-09-16", "UADMIN", db, config)
+
+    assert "不會提醒" in close_message
+    assert db.query(ClosedDate).filter_by(branch_id=branch.id, service_date=date(2026, 9, 15)).count() == 1
+    assert "休息略過：09/15" in status_message
+    assert "未確認：09/14、09/16" in status_message

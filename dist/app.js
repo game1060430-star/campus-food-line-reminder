@@ -1010,7 +1010,14 @@ async function downloadOfficial(form) {
   for (const type of fileTypes) {
     await writeOfficialWorkbook(type, officialRows[type], `${branch.name}_${OFFICIAL_TEMPLATES[type].name}_${startDate}_到_${endDate}.xlsx`);
   }
-  result.innerHTML = `<div class="notice">已產生 ${fileTypes.length} 個 Excel。若手機瀏覽器擋住多檔下載，請再按一次或改成一次只勾一種檔案。</div>`;
+  const lineText = `已上傳 ${branch.name} ${startDate} ${endDate}`;
+  result.innerHTML = html`
+    <div class="notice">
+      已產生 ${fileTypes.length} 個 Excel。若手機瀏覽器擋住多檔下載，請再按一次或改成一次只勾一種檔案。
+      <br><br><b>上傳到官方平台後，把下面這段傳給 LINE 機器人：</b>
+      <textarea id="lineUploadText" readonly rows="2">${lineText}</textarea>
+      <button type="button" data-copy-target="lineUploadText" class="secondary">複製 LINE 回報文字</button>
+    </div>`;
 }
 
 function validateDownload(data, branch, fileTypes, recipeIds, startDate, endDate) {
@@ -1309,6 +1316,14 @@ document.addEventListener("click", async event => {
   }
   const action = event.target.closest("[data-action-click]");
   if (action?.dataset.actionClick === "exportBackup") await exportBackup();
+  const copy = event.target.closest("[data-copy-target]");
+  if (copy) {
+    const target = document.getElementById(copy.dataset.copyTarget);
+    if (!target) return;
+    target.select?.();
+    await navigator.clipboard?.writeText(target.value).catch(() => document.execCommand("copy"));
+    alert("已複製，可以貼到 LINE 機器人。");
+  }
 });
 
 async function init() {
