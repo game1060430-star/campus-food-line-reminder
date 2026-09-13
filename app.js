@@ -1328,19 +1328,15 @@ document.addEventListener("click", async event => {
 
 async function init() {
   db = await openDb();
-  await disableServiceWorkerCache();
+  await registerOfflineApp();
   await render();
 }
 
-async function disableServiceWorkerCache() {
-  if ("serviceWorker" in navigator) {
-    const registrations = await navigator.serviceWorker.getRegistrations().catch(() => []);
-    await Promise.all(registrations.map(registration => registration.unregister().catch(() => {})));
-  }
-  if ("caches" in window) {
-    const keys = await caches.keys().catch(() => []);
-    await Promise.all(keys.map(key => caches.delete(key).catch(() => {})));
-  }
+async function registerOfflineApp() {
+  if (!("serviceWorker" in navigator)) return;
+  await navigator.serviceWorker.register("./sw.js").catch(error => {
+    console.warn("Offline app registration failed", error);
+  });
 }
 
 init().catch(error => {
