@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>選擇工作區</h1>
+<div class="notice"><b>先選你今天要做哪一種資料。</b><br>如果只做某一間店，請先點那間店；如果要新增分店、建立共用資料，或把資料分享給多間店，才進「分店管理／資源共享」。</div>
+
+<h2>單店操作</h2>
+<div class="grid">
+{% for b in branches %}
+<div class="card">
+  <h2>{{b.name}}</h2>
+  <p class="muted">{{b.school_name}}／{{b.service_location}}／{{b.restaurant_name}}</p>
+  <div class="actions">
+    <a class="btn" href="/exports?branch_id={{b.id}}">產生菜單／食材</a>
+    <a class="btn secondary" href="/master-exports?branch_id={{b.id}}">供應商／調味料檔</a>
+    <a class="btn secondary" href="/bulk-setup?branch_id={{b.id}}">初期建檔</a>
+    <a class="btn secondary" href="/imports?branch_id={{b.id}}">匯入舊檔建檔</a>
+    <a class="btn secondary" href="/recipes?branch_id={{b.id}}">菜色管理</a>
+    <a class="btn secondary" href="/ingredients?branch_id={{b.id}}">食材管理</a>
+    <a class="btn secondary" href="/menu?branch_id={{b.id}}">排菜單</a>
+    <a class="btn secondary" href="/uploads?branch_id={{b.id}}">確認上傳</a>
+  </div>
+</div>
+{% else %}
+<div class="card">尚未建立分店。<a class="btn secondary" href="/branches">前往分店管理</a></div>
+{% endfor %}
+</div>
+
+<h2>分店管理／資源共享</h2>
+<div class="card">
+  <p class="muted">在這裡新增分店、建立共用供應商、共用食材、共用調味料，或調整哪些分店可以使用某筆資料。</p>
+  <div class="actions">
+    <a class="btn" href="/branches">新增／管理分店</a>
+    <a class="btn secondary" href="/suppliers">供應商共享</a>
+    <a class="btn secondary" href="/ingredients">食材共享</a>
+    <a class="btn secondary" href="/seasonings">調味料共享</a>
+    <a class="btn secondary" href="/recipes">菜色共享</a>
+    <a class="btn secondary" href="/bulk-setup">共用初期建檔</a>
+    <a class="btn secondary" href="/imports">匯入共用舊檔</a>
+  </div>
+</div>
+
+<h2>資料總覽</h2>
+<div class="grid">
+  <div class="card"><b>供應商</b><br><small>{{counts.suppliers}} 筆</small></div>
+  <div class="card"><b>食材</b><br><small>{{counts.ingredients}} 筆</small></div>
+  <div class="card"><b>調味料</b><br><small>{{counts.seasonings}} 筆</small></div>
+  <div class="card"><b>菜色</b><br><small>{{counts.recipes}} 筆</small></div>
+</div>
+{% endblock %}

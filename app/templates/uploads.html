@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>上傳確認</h1>
+<div class="notice"><b>提醒判斷</b><br>下載 Excel 不代表已上傳。只有在這裡按「我已上傳」後，LINE 提醒才會把該日期視為完成。六日不提醒。</div>
+{% if notice == 'confirmed' %}<div class="notice"><b>已記錄。</b><br>這個日期範圍已標記為已上傳。</div>{% endif %}
+
+<form method="get" class="card form">
+  <label>分店
+    <select name="branch_id">
+      {% for b in branches %}<option value="{{b.id}}" {% if selected_branch_id == b.id %}selected{% endif %}>{{b.name}}</option>{% endfor %}
+    </select>
+  </label>
+  <label>查看起始日<input type="date" name="date" value="{{selected_date}}" required></label>
+  <button>查看狀態</button>
+</form>
+
+<form method="post" action="/uploads/confirm" class="card form">
+  <h2>我已上傳</h2>
+  <label>分店
+    <select name="branch_id">
+      {% for b in branches %}<option value="{{b.id}}" {% if selected_branch_id == b.id %}selected{% endif %}>{{b.name}}</option>{% endfor %}
+    </select>
+  </label>
+  <label>開始日期<input type="date" name="start_date" value="{{selected_date}}" required></label>
+  <label>結束日期<input type="date" name="end_date" value="{{selected_date}}" required></label>
+  <label>登錄日
+    <select name="weekdays">
+      <option value="0,1,2,3,4">週一到週五</option>
+      <option value="0,1,2,3,4,5">週一到週六</option>
+      <option value="0,1,2,3,4,5,6">每天</option>
+    </select>
+  </label>
+  <label>額外排除日期<textarea name="excluded_dates" rows="3" placeholder="一行或逗號分隔，例如：2026-10-09, 2026-10-10"></textarea></label>
+  <label>確認人<input name="confirmed_by" placeholder="例如：老闆、店長"></label>
+  <label>備註<input name="note" placeholder="選填"></label>
+  <button>我已上傳</button>
+</form>
+
+<h2>近 14 天狀態</h2>
+{% for day in days %}
+{% set key = (selected_branch_id, day) %}
+{% set item = confirmations.get(key) %}
+<div class="card">
+  <div class="row">
+    <span><b>{{day.isoformat()}}</b><br><small>{{menu_counts.get(key, 0)}} 道菜</small></span>
+    {% if day.weekday() >= 5 %}
+    <span class="status pending">六日不提醒</span>
+    {% elif item %}
+    <span class="status success">已確認上傳</span>
+    {% else %}
+    <span class="status failed">尚未確認</span>
+    {% endif %}
+  </div>
+  {% if item %}<small>確認人：{{item.confirmed_by or '未填'}}／{{item.confirmed_at}}{% if item.note %}／{{item.note}}{% endif %}</small>{% endif %}
+</div>
+{% endfor %}
+{% endblock %}

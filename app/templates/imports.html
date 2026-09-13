@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>匯入舊檔建檔</h1>
+<div class="notice"><b>用途</b><br>新增分店後，可以上傳以前從官方平台用過的 Excel，先把供應商、食材、調味料或菜色建進系統。建檔後仍可慢慢補資料與調整共享範圍。</div>
+
+{% if created is defined %}
+<div class="notice"><b>匯入完成</b><br>新增 {{created}} 筆。{% for e in errors %}<br>{{e}}{% endfor %}</div>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" class="card form">
+  <label>匯入到哪裡
+    <select name="branch_id">
+      <option value="" {% if not selected_branch_id %}selected{% endif %}>分店管理／資源共享</option>
+      {% for b in branches %}<option value="{{b.id}}" {% if selected_branch_id == b.id %}selected{% endif %}>{{b.name}}</option>{% endfor %}
+    </select>
+  </label>
+  <label>檔案類型
+    <select name="import_type" required>
+      <option value="suppliers">供應商 Excel</option>
+      <option value="ingredients">食材 Excel</option>
+      <option value="seasonings">調味料 Excel</option>
+      <option value="recipes">菜單／菜色 Excel</option>
+    </select>
+  </label>
+  <label>Excel 檔<input type="file" name="file" accept=".xlsx" required></label>
+  <button>匯入建檔</button>
+</form>
+{% endblock %}

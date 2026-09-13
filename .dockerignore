@@ -1,0 +1,10 @@
+.pytest_cache
+__pycache__
+*.pyc
+.env
+.secret.key
+campus_food.db
+exports
+logs
+artifacts
+.tools

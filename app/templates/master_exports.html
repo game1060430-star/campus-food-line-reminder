@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>主檔匯出</h1>
+<div class="notice"><b>用途</b><br>供應商通常很少變動，所以這裡可以直接勾選供應商產生 Excel，不需要日期。調味料則選一段日期和會用到的調味料，進貨日期會用開始日期往前推最近一次進貨日。</div>
+
+{% if errors %}<div class="notice"><b>無法產生檔案</b>{% for e in errors %}<br>{{e}}{% endfor %}</div>{% endif %}
+{% if warnings %}<div class="notice"><b>提醒</b>{% for w in warnings %}<br>{{w}}{% endfor %}</div>{% endif %}
+{% if download_files %}
+<div class="card">
+  <h2>已產生檔案</h2>
+  <div class="actions">{% for label,path in download_files.items() %}<a class="btn" href="/exports/files/{{path}}{% if download_token %}?token={{download_token}}{% endif %}">{{label}} Excel</a>{% endfor %}</div>
+</div>
+{% endif %}
+
+<form method="get" class="card form">
+  <label>分店<select name="branch_id" required onchange="location='/master-exports?branch_id='+this.value">{% for b in branches %}<option value="{{b.id}}" {% if selected_branch_id == b.id %}selected{% endif %}>{{b.name}}／{{b.school_name}}／{{b.restaurant_name}}</option>{% endfor %}</select></label>
+</form>
+
+<form method="post" action="/master-exports/suppliers" class="card form">
+  <h2>供應商 Excel</h2>
+  <input type="hidden" name="branch_id" value="{{selected_branch_id}}">
+  <p class="muted">不需要日期。勾選要匯出的供應商；都不勾時會匯出這個分店可用的全部供應商。</p>
+  <details open><summary>選擇供應商</summary>
+    {% for supplier in suppliers %}
+    <label class="check"><input type="checkbox" name="supplier_ids" value="{{supplier.id}}"><span>{{supplier.name}}／{{supplier.owner or '未填負責人'}}</span></label>
+    {% else %}<p>尚未建立供應商。</p>{% endfor %}
+  </details>
+  <button>產生供應商 Excel</button>
+</form>
+
+<form method="post" action="/master-exports/seasonings" class="card form">
+  <h2>調味料 Excel</h2>
+  <input type="hidden" name="branch_id" value="{{selected_branch_id}}">
+  <label>開始日期<input type="date" name="start_date" value="2026-09-14" required></label>
+  <label>結束日期<input type="date" name="end_date" value="2026-12-31" required></label>
+  <p class="muted">進貨日期會用開始日期往前推：有固定進貨星期的供應商會取最近一次固定進貨日，沒有設定的供應商會取前一個工作日。</p>
+  <details open><summary>選擇調味料</summary>
+    {% for seasoning in seasonings %}
+    <label class="check"><input type="checkbox" name="seasoning_ids" value="{{seasoning.id}}"><span>{{seasoning.name}}</span></label>
+    {% else %}<p>尚未建立調味料。</p>{% endfor %}
+  </details>
+  <button>產生調味料 Excel</button>
+</form>
+{% endblock %}

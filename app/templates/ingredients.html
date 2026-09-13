@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>食材</h1>
+{% include 'branch_filter.html' %}
+<div class="notice"><b>套用範圍</b><br>選「共用」代表所有分店都可以直接選用；選某間分店代表只有該分店可用。食材若設為共用，供應商也建議設為共用。</div>
+
+{% if blocked %}
+<div class="notice"><b>不能刪除食材。</b><br>這個食材仍被菜色使用。請先選替代食材，或停用使用它的菜色，否則官方上傳會缺食材。</div>
+{% endif %}
+
+{% if not suppliers %}
+<div class="card">請先新增供應商，再建立食材。<a class="btn secondary" href="/suppliers">前往供應商</a></div>
+{% else %}
+<form method="post" class="card form">
+  <label>產品名稱*<input name="product_name" required></label>
+  <label>食材名稱*<input name="ingredient_name" required></label>
+  <label>原產地*<input name="origin" required></label>
+  <label>供應商*
+    <select name="supplier_id" required>{% for s in suppliers %}<option value="{{s.id}}">{{s.name}}{% if s.branch_id %}／分店專用{% else %}／共用{% endif %}</option>{% endfor %}</select>
+  </label>
+  <label>套用範圍
+    <select name="branch_id"><option value="">共用</option>{% for b in branches %}<option value="{{b.id}}" {% if selected_branch_id == b.id %}selected{% endif %}>{{b.name}}</option>{% endfor %}</select>
+  </label>
+  <button>新增食材</button>
+</form>
+{% endif %}
+
+{% for x in items %}
+{% set used_by = ingredient_recipes.get(x.id, []) %}
+<div class="card">
+  <div class="row">
+    <span><b>{{x.ingredient_name}}</b><br>{{x.product_name or '待補產品名稱'}}／{{x.origin or '待補原產地'}}<br><small>{{supplier_map.get(x.supplier_id).name if supplier_map.get(x.supplier_id) else '待補供應商'}}／{{branch_map.get(x.branch_id).name if branch_map.get(x.branch_id) else '共用'}}</small></span>
+  </div>
+
+  <details>
+    <summary>修改食材</summary>
+    <form method="post" action="/ingredients/{{x.id}}/update" class="form">
+      <label>產品名稱*<input name="product_name" value="{{x.product_name or ''}}" required></label>
+      <label>食材名稱*<input name="ingredient_name" value="{{x.ingredient_name}}" required></label>
+      <label>原產地*<input name="origin" value="{{x.origin or ''}}" required></label>
+      <label>供應商*
+        <select name="supplier_id" required>{% if not x.supplier_id %}<option value="">請選擇供應商</option>{% endif %}{% for s in suppliers %}<option value="{{s.id}}" {% if x.supplier_id == s.id %}selected{% endif %}>{{s.name}}{% if s.branch_id %}／分店專用{% else %}／共用{% endif %}</option>{% endfor %}</select>
+      </label>
+      <label>套用範圍
+        <select name="branch_id"><option value="" {% if not x.branch_id %}selected{% endif %}>共用</option>{% for b in branches %}<option value="{{b.id}}" {% if x.branch_id == b.id %}selected{% endif %}>{{b.name}}</option>{% endfor %}</select>
+      </label>
+      <button class="secondary">儲存修改</button>
+    </form>
+  </details>
+
+  <form method="post" action="/ingredients/{{x.id}}/scope" class="form">
+    <b>可用分店</b>
+    <small>不勾任何分店代表全部分店共用。</small>
+    {% set selected_scopes = scope_map.get(x.id, []) %}
+    {% for b in branches %}<label class="check"><input type="checkbox" name="branch_ids" value="{{b.id}}" {% if b.id in selected_scopes %}checked{% endif %}><span>{{b.name}}</span></label>{% endfor %}
+    <button class="secondary">更新套用範圍</button>
+  </form>
+
+  {% if used_by %}
+  <small>菜色使用中：{{used_by|map(attribute='name')|join('、')}}</small>
+  <form method="post" action="/ingredients/{{x.id}}/replace" class="form">
+    <label>替換成其他食材後刪除<select name="replacement_ingredient_id" required>{% for other in items %}{% if other.id != x.id %}<option value="{{other.id}}">{{other.ingredient_name}}／{{other.product_name}}</option>{% endif %}{% endfor %}</select></label>
+    <button class="secondary" onclick="return confirm('會把使用這個食材的菜色改成新食材，然後停用原食材。確定？')">替換食材</button>
+  </form>
+  <form method="post" action="/ingredients/{{x.id}}/delete-with-recipes"><button class="secondary" onclick="return confirm('會停用所有使用這個食材的菜色，再停用食材。確定？')">停用相關菜色並刪除</button></form>
+  {% else %}
+  <form method="post" action="/ingredients/{{x.id}}/delete"><button class="secondary" onclick="return confirm('確定停用這個食材？')">刪除</button></form>
+  {% endif %}
+</div>
+{% else %}
+<p>尚未建立食材。</p>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: campus-food-register
+    env: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: campus-food-db
+          property: connectionString
+      - key: APP_BASE_URL
+        sync: false
+      - key: WEB_ACCESS_TOKEN
+        generateValue: true
+      - key: LINE_CHANNEL_SECRET
+        sync: false
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+
+databases:
+  - name: campus-food-db
+    plan: starter

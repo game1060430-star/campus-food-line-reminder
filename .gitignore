@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+*.db
+.secret.key
+.env
+.tools/
+playwright/.auth/
+artifacts/
+exports/
+backup_data.json
+app/static/captcha/
+data/current/

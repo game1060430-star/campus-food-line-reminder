@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>產生官方 Excel</h1>
+<div class="notice"><b>用途</b><br>先在這裡整理與檢查資料，下載官方格式 Excel 後自己上傳。這頁主要產生菜單與食材；供應商和調味料請到「主檔匯出」。</div>
+{% if errors %}<div class="notice"><b>無法產生檔案</b>{% for e in errors %}<br>{{e}}{% endfor %}</div>{% endif %}
+{% if warnings %}<div class="notice"><b>提醒</b>{% for w in warnings %}<br>{{w}}{% endfor %}</div>{% endif %}
+{% if download_files %}
+<div class="card">
+  <h2>已產生檔案</h2>
+  <p class="muted">請逐一下載後到官方平台上傳。下載不會自動算完成，實際上傳後再按確認。</p>
+  <div class="actions">{% for label,path in download_files.items() %}<a class="btn" href="/exports/files/{{path}}{% if download_token %}?token={{download_token}}{% endif %}">{{label}} Excel</a>{% endfor %}</div>
+  {% if confirm_context %}
+  <form method="post" action="/uploads/confirm" class="form">
+    <input type="hidden" name="branch_id" value="{{confirm_context.branch_id}}">
+    <input type="hidden" name="start_date" value="{{confirm_context.start_date}}">
+    <input type="hidden" name="end_date" value="{{confirm_context.end_date}}">
+    <input type="hidden" name="weekdays" value="{{confirm_context.weekdays}}">
+    <input type="hidden" name="excluded_dates" value="{{confirm_context.excluded_dates}}">
+    <label>確認人<input name="confirmed_by" placeholder="例如：老闆、店長"></label>
+    <label>備註<input name="note" placeholder="選填"></label>
+    <button>我已上傳這個日期範圍</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+<form method="post" class="card form">
+  <label>分店<select name="branch_id" required onchange="location='/exports?branch_id='+this.value">{% for b in branches %}<option value="{{b.id}}" {% if selected_branch_id == b.id %}selected{% endif %}>{{b.name}}／{{b.school_name}}／{{b.restaurant_name}}</option>{% endfor %}</select></label>
+  <details open>
+    <summary>下載項目</summary>
+    <label class="check"><input type="checkbox" name="file_types" value="menu" checked><span>菜單 Excel</span></label>
+    <label class="check"><input type="checkbox" name="file_types" value="ingredients" checked><span>食材 Excel</span></label>
+  </details>
+  <label>開始日期<input type="date" name="start_date" value="2026-09-14" required></label>
+  <label>結束日期<input type="date" name="end_date" value="2026-12-31" required></label>
+  <label>登錄日<select name="weekdays"><option value="0,1,2,3,4">週一到週五</option><option value="0,1,2,3,4,5">週一到週六</option><option value="0,1,2,3,4,5,6">每天</option></select></label>
+  <label>額外排除日期<textarea name="excluded_dates" rows="3" placeholder="一行或逗號分隔，例如：2026-10-09, 2026-10-10"></textarea></label>
+  <details open><summary>要登錄的菜色</summary><p class="muted">只會列出這個分店可用的菜色。有勾選時，會把勾選菜色套用到每個登錄日；都不勾時，使用已排好的菜單。若只下載供應商，可不用勾菜色。</p>{% for r in recipes %}<label class="check"><input type="checkbox" name="recipe_ids" value="{{r.id}}"><span>{{r.name}}／{{r.calories}} kcal{% if r.branch_id %}／分店專用{% else %}／共用{% endif %}</span></label>{% else %}<p>尚未建立菜色。</p>{% endfor %}</details>
+  <button>檢查並產生 Excel</button>
+</form>
+{% endblock %}

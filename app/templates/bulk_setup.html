@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>初期大量建檔</h1>
+<div class="notice"><b>用途</b><br>先大量建立食材名稱和菜色名稱，之後再慢慢補供應商、原產地、熱量、食材組成。草稿資料可以先存在系統裡，但如果匯出時用到未補完的食材，系統會提醒補必填欄位。</div>
+
+{% if request.query_params.get('notice') %}
+<div class="notice"><b>已建立</b><br>新增 {{request.query_params.get('created') or 0}} 筆，略過重複 {{request.query_params.get('skipped') or 0}} 筆。</div>
+{% endif %}
+
+<form method="get" class="card form">
+  <label>套用範圍<select name="branch_id" onchange="location='/bulk-setup?branch_id='+this.value">
+    <option value="" {% if not selected_branch_id %}selected{% endif %}>共用：所有分店可用</option>
+    {% for b in branches %}<option value="{{b.id}}" {% if selected_branch_id == b.id %}selected{% endif %}>只給 {{b.name}}</option>{% endfor %}
+  </select></label>
+</form>
+
+<form method="post" action="/bulk-setup/ingredients" class="card form">
+  <h2>大量建立食材名稱</h2>
+  <input type="hidden" name="branch_id" value="{{selected_branch_id or ''}}">
+  <p class="muted">一行一個食材。系統會先把「產品名稱」暫時設成同名，供應商和原產地留待之後補。</p>
+  <label>食材名稱<textarea name="names" rows="10" placeholder="油麵&#10;蘑菇醬&#10;雞蛋"></textarea></label>
+  <button>建立食材草稿</button>
+</form>
+
+<form method="post" action="/bulk-setup/recipes" class="card form">
+  <h2>大量建立菜色名稱</h2>
+  <input type="hidden" name="branch_id" value="{{selected_branch_id or ''}}">
+  <p class="muted">一行一道菜。熱量會先用 0，食材組成之後再到菜色管理慢慢勾。</p>
+  <label>菜色名稱<textarea name="names" rows="10" placeholder="蘑菇麵&#10;雞排飯&#10;滷肉飯"></textarea></label>
+  <button>建立菜色草稿</button>
+</form>
+{% endblock %}

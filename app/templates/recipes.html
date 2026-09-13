@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>菜色管理</h1>
+{% include 'branch_filter.html' %}
+<div class="notice"><b>套用範圍</b><br>選「共用」代表所有分店都可以排這道菜；選某間分店代表只有該分店可用。共用菜色可搭配共用食材與共用調味料。</div>
+
+<form method="post" class="card form">
+  <label>菜色名稱*<input name="name" required></label>
+  <label>套用範圍<select name="branch_id"><option value="">共用</option>{% for b in branches %}<option value="{{b.id}}" {% if selected_branch_id == b.id %}selected{% endif %}>{{b.name}}</option>{% endfor %}</select></label>
+  <label>熱量*<input name="calories" type="number" min="0" required></label>
+  <details open><summary>食材組成</summary>{% for i in ingredients %}<label class="check"><input type="checkbox" name="ingredient_ids" value="{{i.id}}"><span>{{i.ingredient_name}}／{{i.product_name}}{% if i.branch_id %}／分店專用{% else %}／共用{% endif %}</span></label>{% else %}<p class="muted">尚未建立食材。請先到「食材」新增。</p>{% endfor %}</details>
+  <details open><summary>調味料組成</summary>{% for s in seasonings %}<label class="check"><input type="checkbox" name="seasoning_ids" value="{{s.id}}"><span>{{s.name}}{% if s.branch_id %}／分店專用{% else %}／共用{% endif %}</span></label>{% else %}<p class="muted">尚未建立調味料。請先到「調味料」新增。</p>{% endfor %}</details>
+  <button>新增菜色</button>
+</form>
+
+{% for r in recipes %}
+{% set chosen_ingredients = ingredient_ids_by_recipe.get(r.id, []) %}
+{% set chosen_seasonings = seasoning_ids_by_recipe.get(r.id, []) %}
+<div class="card">
+  <div class="row">
+    <span><b>{{r.name}}</b><br>{% if r.branch_id %}{{branch_map.get(r.branch_id).name if branch_map and branch_map.get(r.branch_id) else '分店專用'}}{% else %}共用{% endif %}</span>
+    <span>{{r.calories}} kcal</span>
+  </div>
+  <div class="composition">
+    <b>食材組成</b><br>
+    <span>{{ingredients_by_recipe.get(r.id, [])|join('、') or '未綁定'}}</span>
+  </div>
+  <div class="composition">
+    <b>調味料組成</b><br>
+    <span>{{seasonings_by_recipe.get(r.id, [])|join('、') or '未綁定'}}</span>
+  </div>
+
+  <details>
+    <summary>修改菜色與食材組成</summary>
+    <form method="post" action="/recipes/{{r.id}}/update" class="form">
+      <label>菜色名稱*<input name="name" value="{{r.name}}" required></label>
+      <label>套用範圍<select name="branch_id"><option value="" {% if not r.branch_id %}selected{% endif %}>共用：所有分店可用</option>{% for b in branches %}<option value="{{b.id}}" {% if r.branch_id == b.id %}selected{% endif %}>只給 {{b.name}}</option>{% endfor %}</select></label>
+      <label>熱量*<input name="calories" type="number" min="0" value="{{r.calories}}" required></label>
+      <details open><summary>食材組成：勾選這道菜會用到的食材</summary>
+        {% for i in ingredients %}
+        <label class="check"><input type="checkbox" name="ingredient_ids" value="{{i.id}}" {% if i.id in chosen_ingredients %}checked{% endif %}><span>{{i.ingredient_name}}／{{i.product_name}}{% if i.branch_id %}／分店專用{% else %}／共用{% endif %}</span></label>
+        {% else %}<p class="muted">尚未建立食材。請先到「食材」新增。</p>{% endfor %}
+      </details>
+      <details open><summary>調味料組成：勾選這道菜會用到的調味料</summary>
+        {% for s in seasonings %}
+        <label class="check"><input type="checkbox" name="seasoning_ids" value="{{s.id}}" {% if s.id in chosen_seasonings %}checked{% endif %}><span>{{s.name}}{% if s.branch_id %}／分店專用{% else %}／共用{% endif %}</span></label>
+        {% else %}<p class="muted">尚未建立調味料。請先到「調味料」新增。</p>{% endfor %}
+      </details>
+      <button class="secondary">儲存修改</button>
+    </form>
+  </details>
+
+  <form method="post" action="/recipes/{{r.id}}/scope" class="form">
+    <b>可用分店</b>
+    <small>不勾任何分店代表全部分店共用。</small>
+    {% set selected_scopes = scope_map.get(r.id, []) %}
+    {% for b in branches %}<label class="check"><input type="checkbox" name="branch_ids" value="{{b.id}}" {% if b.id in selected_scopes %}checked{% endif %}><span>{{b.name}}</span></label>{% endfor %}
+    <button class="secondary">更新套用範圍</button>
+  </form>
+
+  <form method="post" action="/recipes/{{r.id}}/delete"><button class="secondary" onclick="return confirm('確定停用這道菜色？已排定的歷史菜單會保留。')">刪除</button></form>
+</div>
+{% endfor %}
+{% endblock %}

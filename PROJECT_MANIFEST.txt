@@ -1,0 +1,12 @@
+Start here: CODEX_TASK.md
+Product spec: specs/PRD.md
+Excel rules: specs/EXCEL_RULES.md
+Data model: specs/DATA_MODEL.md
+LINE UX: specs/LINE_UX.md
+Automation: specs/AUTOMATION.md
+Acceptance: specs/ACCEPTANCE_TESTS.md
+Architecture: specs/ARCHITECTURE.md
+Current data notes: specs/KNOWN_CURRENT_DATA.md
+Official templates: data/templates/
+Existing operational data: data/current/
+Existing MVP source: app/, run.py

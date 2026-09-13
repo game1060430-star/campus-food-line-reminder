@@ -1,0 +1,10 @@
+<form method="get" class="card form">
+  <label>目前工作區
+    <select name="branch_id" onchange="this.form.submit()">
+      <option value="" {% if not selected_branch_id %}selected{% endif %}>分店管理／資源共享</option>
+      {% for b in branches %}
+      <option value="{{b.id}}" {% if selected_branch_id == b.id %}selected{% endif %}>{{b.name}} 工作區</option>
+      {% endfor %}
+    </select>
+  </label>
+</form>

@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>供應商</h1>
+{% include 'branch_filter.html' %}
+<div class="notice"><b>套用範圍</b><br>選「共用」代表所有分店都可以直接使用；選某間分店代表只有該分店可用。既有供應商可以在每張卡片直接調整，不用刪除重建。</div>
+
+{% if blocked %}
+<div class="notice"><b>不能刪除供應商。</b><br>這個供應商底下還有啟用中的食材或調味料。請先改食材/調味料的供應商，或刪除那些主檔後再刪供應商。</div>
+{% endif %}
+
+<form method="post" class="card form">
+  <label>供應商名稱*<input name="name" required></label>
+  <label>套用範圍
+    <select name="branch_id">
+      <option value="">共用</option>
+      {% for b in branches %}<option value="{{b.id}}" {% if selected_branch_id == b.id %}selected{% endif %}>{{b.name}}</option>{% endfor %}
+    </select>
+  </label>
+  <label>負責人*<input name="owner" required></label>
+  <label>統編*<input name="tax_id" required></label>
+  <label>地址*<input name="address" required></label>
+  <label>電話*<input name="phone" required></label>
+  <details>
+    <summary>固定進貨星期</summary>
+    <p class="muted">有固定送貨日就勾選；沒有固定送貨日就不要勾，匯出會自動用前一個工作日。</p>
+    {% for value,label in weekdays %}<label class="check"><input type="checkbox" name="delivery_weekdays" value="{{value}}"><span>{{label}}</span></label>{% endfor %}
+  </details>
+  <button>新增供應商</button>
+</form>
+
+{% for x in items %}
+{% set deps = supplier_dependencies.get(x.id) %}
+<div class="card">
+  <div class="row">
+    <span><b>{{x.name}}</b><br>{{branch_map.get(x.branch_id).name if branch_map.get(x.branch_id) else '共用'}}{% if x.phone %}／{{x.phone}}{% endif %}</span>
+    {% if deps.ingredients or deps.seasonings %}
+    <span class="status linked">提供 {{deps.ingredients|length + deps.seasonings|length}} 項</span>
+    {% else %}
+    <form method="post" action="/suppliers/{{x.id}}/delete"><button class="secondary" onclick="return confirm('確定停用這個供應商？')">刪除</button></form>
+    {% endif %}
+  </div>
+  <small>負責人：{{x.owner or '未填'}}／統編：{{x.tax_id or '未填'}}／地址：{{x.address or '未填'}}</small><br>
+  {% set delivery_days = (x.delivery_weekdays or '').split(',') %}
+  <small>固定進貨：{% if x.delivery_weekdays %}{% for value,label in weekdays %}{% if value|string in delivery_days %}{{label}}{{'、' if not loop.last else ''}}{% endif %}{% endfor %}{% else %}未設定，使用前一個工作日{% endif %}</small>
+
+  <form method="post" action="/suppliers/{{x.id}}/scope" class="form">
+    <b>可用分店</b>
+    <small>不勾任何分店代表全部分店共用。</small>
+    {% set selected_scopes = scope_map.get(x.id, []) %}
+    {% for b in branches %}<label class="check"><input type="checkbox" name="branch_ids" value="{{b.id}}" {% if b.id in selected_scopes %}checked{% endif %}><span>{{b.name}}</span></label>{% endfor %}
+    <button class="secondary">更新套用範圍</button>
+  </form>
+
+  <details>
+    <summary>修改供應商</summary>
+    <form method="post" action="/suppliers/{{x.id}}/update" class="form">
+      <label>供應商名稱*<input name="name" value="{{x.name}}" required></label>
+      <label>套用範圍
+        <select name="branch_id">
+          <option value="" {% if not x.branch_id %}selected{% endif %}>共用：所有分店可用</option>
+          {% for b in branches %}<option value="{{b.id}}" {% if x.branch_id == b.id %}selected{% endif %}>{{b.name}}</option>{% endfor %}
+        </select>
+      </label>
+      <label>負責人*<input name="owner" value="{{x.owner or ''}}" required></label>
+      <label>統編*<input name="tax_id" value="{{x.tax_id or ''}}" required></label>
+      <label>地址*<input name="address" value="{{x.address or ''}}" required></label>
+      <label>電話*<input name="phone" value="{{x.phone or ''}}" required></label>
+      <details open>
+        <summary>固定進貨星期</summary>
+        <p class="muted">例如喬富固定週一、週三送貨，就勾週一與週三。供餐日會回推到最近一次進貨日，且不取供餐當天。</p>
+        {% for value,label in weekdays %}<label class="check"><input type="checkbox" name="delivery_weekdays" value="{{value}}" {% if value|string in delivery_days %}checked{% endif %}><span>{{label}}</span></label>{% endfor %}
+      </details>
+      <button class="secondary">儲存修改</button>
+    </form>
+  </details>
+
+  {% if deps.ingredients or deps.seasonings %}
+  <small>這個供應商提供：</small>
+  {% if deps.ingredients %}<p class="muted">食材：{{deps.ingredients|map(attribute='ingredient_name')|join('、')}}</p>{% endif %}
+  {% if deps.seasonings %}<p class="muted">調味料：{{deps.seasonings|map(attribute='name')|join('、')}}</p>{% endif %}
+  <form method="post" action="/suppliers/{{x.id}}/replace" class="form">
+    <label>替換成其他供應商後刪除
+      <select name="replacement_supplier_id" required>
+        {% for other in items %}{% if other.id != x.id %}<option value="{{other.id}}">{{other.name}}</option>{% endif %}{% endfor %}
+      </select>
+    </label>
+    <button class="secondary" onclick="return confirm('會把這個供應商底下的食材/調味料全部改到新供應商，然後停用原供應商。確定？')">替換供應商</button>
+  </form>
+  {% endif %}
+  {% set assign_options = ingredient_assign_options.get(x.id, []) if ingredient_assign_options else [] %}
+  {% if assign_options %}
+  <details>
+    <summary>把既有食材改到這個供應商</summary>
+    <form method="post" action="/suppliers/{{x.id}}/assign-ingredients" class="form">
+      <input type="hidden" name="branch_id" value="{{selected_branch_id or ''}}">
+      <p class="muted">勾選後會把這些食材的供應商改成「{{x.name}}」。適合新增供應商後，把原本的食材直接轉過來。</p>
+      {% for ingredient in assign_options %}
+      <label class="check"><input type="checkbox" name="ingredient_ids" value="{{ingredient.id}}"><span>{{ingredient.ingredient_name}}／{{ingredient.product_name}}{% if branch_map.get(ingredient.branch_id) %}／{{branch_map.get(ingredient.branch_id).name}}{% else %}／共用{% endif %}</span></label>
+      {% endfor %}
+      <button class="secondary" onclick="return confirm('確定把勾選食材改到這個供應商？')">更新食材供應商</button>
+    </form>
+  </details>
+  {% endif %}
+</div>
+{% else %}
+<p>尚未建立供應商。</p>
+{% endfor %}
+{% endblock %}
