@@ -1,29 +1,12 @@
-const CACHE = "campus-food-local-v8";
-const ASSETS = [
-  "./",
-  "./index.html",
-  "./styles.css",
-  "./app.js",
-  "./manifest.json",
-  "./icon.svg",
-  "./vendor/xlsx.full.min.js",
-  "./vendor/jszip.min.js",
-  "./templates/PreMenuExcelExample.xlsx",
-  "./templates/PrerestaurantingredientExcelExample.xlsx",
-  "./templates/seasoningstockdataCollegeExcelExample.xlsx",
-  "./templates/supplierExcelExample.xlsx"
-];
-
 self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", event => {
   event.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
+    caches.keys()
+      .then(keys => Promise.all(keys.map(key => caches.delete(key))))
+      .then(() => self.registration.unregister())
+      .then(() => self.clients.claim())
   );
-});
-
-self.addEventListener("fetch", event => {
-  event.respondWith(caches.match(event.request).then(match => match || fetch(event.request)));
 });
