@@ -14,7 +14,7 @@
 <form method="post" class="card form">
   <label>產品名稱*<input name="product_name" required></label>
   <label>食材名稱*<input name="ingredient_name" required></label>
-  <label>原產地*<input name="origin" required></label>
+  <label>原產地<input name="origin" placeholder="不填會自動填臺灣"></label>
   <label>供應商*
     <select name="supplier_id" required>{% for s in suppliers %}<option value="{{s.id}}">{{s.name}}{% if s.branch_id %}／分店專用{% else %}／共用{% endif %}</option>{% endfor %}</select>
   </label>
@@ -37,7 +37,7 @@
     <form method="post" action="/ingredients/{{x.id}}/update" class="form">
       <label>產品名稱*<input name="product_name" value="{{x.product_name or ''}}" required></label>
       <label>食材名稱*<input name="ingredient_name" value="{{x.ingredient_name}}" required></label>
-      <label>原產地*<input name="origin" value="{{x.origin or ''}}" required></label>
+      <label>原產地<input name="origin" value="{{x.origin or ''}}" placeholder="不填會自動填臺灣"></label>
       <label>供應商*
         <select name="supplier_id" required>{% if not x.supplier_id %}<option value="">請選擇供應商</option>{% endif %}{% for s in suppliers %}<option value="{{s.id}}" {% if x.supplier_id == s.id %}selected{% endif %}>{{s.name}}{% if s.branch_id %}／分店專用{% else %}／共用{% endif %}</option>{% endfor %}</select>
       </label>
@@ -64,7 +64,7 @@
   </form>
   <form method="post" action="/ingredients/{{x.id}}/delete-with-recipes"><button class="secondary" onclick="return confirm('會停用所有使用這個食材的菜色，再停用食材。確定？')">停用相關菜色並刪除</button></form>
   {% else %}
-  <form method="post" action="/ingredients/{{x.id}}/delete"><button class="secondary" onclick="return confirm('確定停用這個食材？')">刪除</button></form>
+  <form method="post" action="/ingredients/{{x.id}}/delete"><button class="secondary" onclick="return confirm('確定刪除這個錯誤食材？')">刪除錯誤食材</button></form>
   {% endif %}
 </div>
 {% else %}

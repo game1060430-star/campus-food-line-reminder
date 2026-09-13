@@ -16,6 +16,7 @@
 {% endif %}
 
 {% for x in items %}
+{% set used_by = seasoning_recipes.get(x.id, []) %}
 <div class="card">
   <div class="row">
     <span><b>{{x.name}}</b><br><small>{{supplier_map.get(x.supplier_id).name if supplier_map.get(x.supplier_id) else '未指定供應商'}}／{{branch_map.get(x.branch_id).name if branch_map.get(x.branch_id) else '共用'}}</small></span>
@@ -36,6 +37,10 @@
     {% for b in branches %}<label class="check"><input type="checkbox" name="branch_ids" value="{{b.id}}" {% if b.id in selected_scopes %}checked{% endif %}><span>{{b.name}}</span></label>{% endfor %}
     <button class="secondary">更新套用範圍</button>
   </form>
+  {% if used_by %}
+  <small>菜色使用中：{{used_by|map(attribute='name')|join('、')}}</small>
+  {% endif %}
+  <form method="post" action="/seasonings/{{x.id}}/delete"><button class="secondary" onclick="return confirm('確定刪除這個調味料？如果菜色有使用，會一起從菜色組成移除。')">刪除錯誤調味料</button></form>
 </div>
 {% else %}
 <p>尚未建立調味料。</p>

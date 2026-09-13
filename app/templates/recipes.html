@@ -58,7 +58,7 @@
     <button class="secondary">更新套用範圍</button>
   </form>
 
-  <form method="post" action="/recipes/{{r.id}}/delete"><button class="secondary" onclick="return confirm('確定停用這道菜色？已排定的歷史菜單會保留。')">刪除</button></form>
+  <form method="post" action="/recipes/{{r.id}}/delete"><button class="secondary" onclick="return confirm('確定刪除這道錯誤菜色？已排定的歷史菜單會保留。')">刪除錯誤菜色</button></form>
 </div>
 {% endfor %}
 {% endblock %}

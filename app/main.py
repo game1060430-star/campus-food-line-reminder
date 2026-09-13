@@ -217,7 +217,7 @@ def import_ingredient_workbook(db:Session, branch_id:int|None, file:UploadFile) 
         supplier=find_supplier_by_name(db,supplier_name)
         if supplier_name and not supplier:
             errors.append(f"第 {row_index} 列食材「{ingredient_name}」找不到供應商「{supplier_name}」，先建立成待補供應商。")
-        db.add(Ingredient(product_name=product_name or ingredient_name,ingredient_name=ingredient_name,origin=origin or None,supplier_id=supplier.id if supplier else None,branch_id=branch_id))
+        db.add(Ingredient(product_name=product_name or ingredient_name,ingredient_name=ingredient_name,origin=origin or "臺灣",supplier_id=supplier.id if supplier else None,branch_id=branch_id))
         existing.add(ingredient_name)
         created+=1
     db.commit()
@@ -377,7 +377,7 @@ async def bulk_create_ingredients(request:Request, db:Session=Depends(get_db)):
         if name in existing:
             skipped.append(name)
             continue
-        db.add(Ingredient(product_name=name,ingredient_name=name,origin=None,supplier_id=None,branch_id=branch_id))
+        db.add(Ingredient(product_name=name,ingredient_name=name,origin="臺灣",supplier_id=None,branch_id=branch_id))
         existing.add(name)
         created+=1
     db.commit()
@@ -731,20 +731,20 @@ def ingredients_page(request:Request, db:Session=Depends(get_db)):
     return templates.TemplateResponse("ingredients.html",{"request":request,"branches":branches,"suppliers":suppliers,"items":items,"supplier_map":supplier_map,"branch_map":branch_map,"ingredient_recipes":ingredient_recipes,"scope_map":ingredient_scope_map,"blocked":request.query_params.get("blocked"),"selected_branch_id":selected_branch_id})
 
 @app.post("/ingredients")
-def create_ingredient(product_name:str=Form(...), ingredient_name:str=Form(...), origin:str=Form(...), supplier_id:int=Form(...), branch_id:str=Form(""), manufacturer:str=Form(""), unit:str=Form(""), certification:str=Form(""), certification_no:str=Form(""), db:Session=Depends(get_db)):
+def create_ingredient(product_name:str=Form(...), ingredient_name:str=Form(...), origin:str=Form(""), supplier_id:int=Form(...), branch_id:str=Form(""), manufacturer:str=Form(""), unit:str=Form(""), certification:str=Form(""), certification_no:str=Form(""), db:Session=Depends(get_db)):
     branch_value=optional_branch_id(branch_id)
-    db.add(Ingredient(product_name=product_name,ingredient_name=ingredient_name,origin=origin,supplier_id=supplier_id,branch_id=branch_value,manufacturer=manufacturer or None,unit=unit or None,certification=certification or None,certification_no=certification_no or None))
+    db.add(Ingredient(product_name=product_name,ingredient_name=ingredient_name,origin=origin.strip() or "臺灣",supplier_id=supplier_id,branch_id=branch_value,manufacturer=manufacturer or None,unit=unit or None,certification=certification or None,certification_no=certification_no or None))
     db.commit()
     return redirect_with_branch('/ingredients',branch_value)
 
 @app.post("/ingredients/{ingredient_id}/update")
-def update_ingredient(ingredient_id:int, product_name:str=Form(...), ingredient_name:str=Form(...), origin:str=Form(...), supplier_id:int=Form(...), branch_id:str=Form(""), manufacturer:str=Form(""), unit:str=Form(""), certification:str=Form(""), certification_no:str=Form(""), db:Session=Depends(get_db)):
+def update_ingredient(ingredient_id:int, product_name:str=Form(...), ingredient_name:str=Form(...), origin:str=Form(""), supplier_id:int=Form(...), branch_id:str=Form(""), manufacturer:str=Form(""), unit:str=Form(""), certification:str=Form(""), certification_no:str=Form(""), db:Session=Depends(get_db)):
     ingredient=db.get(Ingredient,ingredient_id)
     if not ingredient: raise HTTPException(404)
     branch_value=optional_branch_id(branch_id)
     ingredient.product_name=product_name.strip()
     ingredient.ingredient_name=ingredient_name.strip()
-    ingredient.origin=origin.strip()
+    ingredient.origin=origin.strip() or "臺灣"
     ingredient.supplier_id=supplier_id
     ingredient.branch_id=branch_value
     ingredient.manufacturer=manufacturer.strip() or None
@@ -811,7 +811,13 @@ def seasonings_page(request:Request, db:Session=Depends(get_db)):
     supplier_map={s.id:s for s in suppliers}
     branch_map={b.id:b for b in branches}
     seasoning_scope_map=scope_map_for(items,"seasoning",branches,db)
-    return templates.TemplateResponse("seasonings.html",{"request":request,"branches":branches,"suppliers":suppliers,"items":items,"supplier_map":supplier_map,"branch_map":branch_map,"scope_map":seasoning_scope_map,"selected_branch_id":selected_branch_id})
+    recipe_map={r.id:r for r in db.scalars(select(Recipe).where(Recipe.active==True)).all()}
+    seasoning_recipes={}
+    for link in db.scalars(select(RecipeSeasoning)).all():
+        recipe=recipe_map.get(link.recipe_id)
+        if recipe:
+            seasoning_recipes.setdefault(link.seasoning_id,[]).append(recipe)
+    return templates.TemplateResponse("seasonings.html",{"request":request,"branches":branches,"suppliers":suppliers,"items":items,"supplier_map":supplier_map,"branch_map":branch_map,"scope_map":seasoning_scope_map,"seasoning_recipes":seasoning_recipes,"selected_branch_id":selected_branch_id})
 
 @app.post("/seasonings")
 def create_seasoning(name:str=Form(...), supplier_id:int=Form(...), branch_id:str=Form(""), manufacturer:str=Form(""), product_name:str=Form(""), unit:str=Form(""), certification:str=Form(""), certification_no:str=Form(""), db:Session=Depends(get_db)):
@@ -845,6 +851,16 @@ def update_seasoning(seasoning_id:int, name:str=Form(...), supplier_id:int=Form(
     seasoning.certification_no=certification_no.strip() or None
     db.commit()
     return redirect_with_branch('/seasonings',branch_value)
+
+@app.post("/seasonings/{seasoning_id}/delete")
+def delete_seasoning(seasoning_id:int, db:Session=Depends(get_db)):
+    seasoning=db.get(Seasoning,seasoning_id)
+    if not seasoning: raise HTTPException(404)
+    for link in db.scalars(select(RecipeSeasoning).where(RecipeSeasoning.seasoning_id==seasoning_id)).all():
+        db.delete(link)
+    seasoning.active=False
+    db.commit()
+    return RedirectResponse('/seasonings',303)
 
 @app.get("/menu", response_class=HTMLResponse)
 def menu_page(request:Request, branch_id:int|None=None, db:Session=Depends(get_db)):

@@ -173,10 +173,10 @@ function renderMasters(data) {
         <textarea name="supplySeasoning" placeholder="供應商：喬富&#10;供應商：青葉&#10;調味料：鹽巴,喬富&#10;調味料：醬油,青葉"></textarea>
       </label>
       <label>食材／菜色
-        <textarea name="ingredientRecipe" placeholder="食材：油麵,喬富,台灣&#10;食材：蘑菇醬,喬富,台灣&#10;菜色：蘑菇麵,500&#10;菜色：咖哩飯"></textarea>
+        <textarea name="ingredientRecipe" placeholder="食材：油麵,喬富,臺灣&#10;食材：蘑菇醬,喬富,臺灣&#10;菜色：蘑菇麵,500&#10;菜色：咖哩飯"></textarea>
       </label>
       <button>批量建立名稱</button>
-      <p class="muted">先大量建立名稱就好。供應商負責人、統編、電話、地址，食材原產地等資料可以之後再補；下載 Excel 前會提醒缺什麼。</p>
+      <p class="muted">先大量建立名稱就好。供應商負責人、統編、電話、地址可以之後再補；食材原產地空白會先用「臺灣」。</p>
     </form>
     <h2>供應商</h2>
     <form class="card" data-action="addSupplier">
@@ -192,7 +192,7 @@ function renderMasters(data) {
     <form class="card" data-action="addIngredient">
       <label>食材名稱<input name="ingredientName" required></label>
       <label>產品名稱<input name="productName" placeholder="不填就同食材名稱"></label>
-      <label>原產地<input name="origin" placeholder="可之後補"></label>
+      <label>原產地<input name="origin" placeholder="不填會自動填臺灣"></label>
       <label>供應商<select name="supplierId"><option value="">待補</option>${suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("")}</select></label>
       <button>新增食材</button>
     </form>
@@ -304,7 +304,7 @@ async function handleSubmit(event) {
     await put("suppliers", { branchId, name: values.name, owner: values.owner, taxId: values.taxId, phone: values.phone, address: values.address });
   }
   if (action === "addIngredient") {
-    await put("ingredients", { branchId, ingredientName: values.ingredientName, productName: values.productName || values.ingredientName, origin: values.origin, supplierId: values.supplierId ? Number(values.supplierId) : null });
+    await put("ingredients", { branchId, ingredientName: values.ingredientName, productName: values.productName || values.ingredientName, origin: values.origin || "臺灣", supplierId: values.supplierId ? Number(values.supplierId) : null });
   }
   if (action === "addSeasoning") {
     if (!values.supplierId) return alert("請先選供應商");
@@ -359,7 +359,7 @@ async function bulkCreate(values, branchId) {
       const name = item.parts[0];
       if (!name || ingredientNames.has(normalizeName(name))) continue;
       const supplier = await ensureSupplier(item.parts[1], branchId, supplierByName);
-      await put("ingredients", { branchId, ingredientName: name, productName: item.parts[3] || name, origin: item.parts[2] || "", supplierId: supplier?.id ? Number(supplier.id) : null });
+      await put("ingredients", { branchId, ingredientName: name, productName: item.parts[3] || name, origin: item.parts[2] || "臺灣", supplierId: supplier?.id ? Number(supplier.id) : null });
       ingredientNames.add(normalizeName(name));
       counts.ingredients += 1;
     }

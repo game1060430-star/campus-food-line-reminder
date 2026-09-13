@@ -17,7 +17,7 @@
 <form method="post" action="/bulk-setup/ingredients" class="card form">
   <h2>大量建立食材名稱</h2>
   <input type="hidden" name="branch_id" value="{{selected_branch_id or ''}}">
-  <p class="muted">一行一個食材。系統會先把「產品名稱」暫時設成同名，供應商和原產地留待之後補。</p>
+  <p class="muted">一行一個食材。系統會先把「產品名稱」暫時設成同名，原產地預設「臺灣」，供應商可以之後補。</p>
   <label>食材名稱<textarea name="names" rows="10" placeholder="油麵&#10;蘑菇醬&#10;雞蛋"></textarea></label>
   <button>建立食材草稿</button>
 </form>
