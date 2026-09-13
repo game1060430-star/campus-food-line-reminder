@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="食材登錄">
+  <meta name="theme-color" content="#111111">
+  <title>食材登錄本機版</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+</head>
+<body>
+  <header><b>食材登錄本機版</b><br><small id="scopeLabel">資料存在這支手機裡</small></header>
+  <main id="app"><div class="notice">載入中，如果一直停在這裡請重新整理。</div></main>
+  <nav>
+    <button data-view="home" class="active">首頁</button>
+    <button data-view="masters">資料</button>
+    <button data-view="recipes">菜色</button>
+    <button data-view="exports">下載</button>
+    <button data-view="backup">備份</button>
+  </nav>
+  <script src="./app.js"></script>
+</body>
+</html>
