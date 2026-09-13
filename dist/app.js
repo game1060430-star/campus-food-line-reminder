@@ -194,6 +194,7 @@ function renderMasters(data) {
       <button>批量建立名稱</button>
       <p class="muted">先大量建立名稱就好。供應商負責人、統編、電話、地址可以之後再補；食材原產地空白會先用「臺灣」。</p>
     </form>
+    ${bulkMastersEditor(suppliers, ingredients, seasonings)}
     <h2>供應商</h2>
     <form class="card" data-action="addSupplier">
       <label>供應商名稱<input name="name" required></label>
@@ -238,6 +239,7 @@ function renderRecipes(data) {
       ${seasonings.map(s => `<label class="check"><input type="checkbox" name="seasoningIds" value="${s.id}"><span>${escapeHtml(s.name)}</span></label>`).join("") || `<p class="muted">尚未建立調味料</p>`}
       <button>新增菜色</button>
     </form>
+    ${bulkRecipesEditor(recipes)}
     <div class="card">${recipes.length ? recipes.map(recipe => recipeRow(recipe, data)).join("") : `<div class="empty">尚未建立菜色</div>`}</div>`;
 }
 
@@ -283,12 +285,69 @@ function renderBackup(data) {
     </div>`;
 }
 
+function bulkMastersEditor(suppliers, ingredients, seasonings) {
+  if (!suppliers.length && !ingredients.length && !seasonings.length) return "";
+  return html`
+    <details class="card">
+      <summary>批量修改資料</summary>
+      <form data-action="bulkSaveMasters">
+        <h2>供應商</h2>
+        ${suppliers.map(item => html`
+          <div class="bulk-item">
+            <input type="hidden" name="supplierIds" value="${item.id}">
+            <input type="hidden" name="supplierBranchIds" value="${item.branchId || ""}">
+            <label>名稱<input name="supplierNames" value="${escapeHtml(item.name)}"></label>
+            <label>負責人<input name="supplierOwners" value="${escapeHtml(item.owner || "")}"></label>
+            <label>統編<input name="supplierTaxIds" value="${escapeHtml(item.taxId || "")}"></label>
+            <label>電話<input name="supplierPhones" value="${escapeHtml(item.phone || "")}"></label>
+            <label>地址<input name="supplierAddresses" value="${escapeHtml(item.address || "")}"></label>
+          </div>`).join("") || `<p class="muted">沒有供應商</p>`}
+        <h2>食材</h2>
+        ${ingredients.map(item => html`
+          <div class="bulk-item">
+            <input type="hidden" name="ingredientIds" value="${item.id}">
+            <input type="hidden" name="ingredientBranchIds" value="${item.branchId || ""}">
+            <label>食材<input name="ingredientNames" value="${escapeHtml(item.ingredientName)}"></label>
+            <label>產品<input name="ingredientProductNames" value="${escapeHtml(item.productName || item.ingredientName)}"></label>
+            <label>產地<input name="ingredientOrigins" value="${escapeHtml(item.origin || "臺灣")}"></label>
+          </div>`).join("") || `<p class="muted">沒有食材</p>`}
+        <h2>調味料</h2>
+        ${seasonings.map(item => html`
+          <div class="bulk-item">
+            <input type="hidden" name="seasoningIds" value="${item.id}">
+            <input type="hidden" name="seasoningBranchIds" value="${item.branchId || ""}">
+            <label>調味料<input name="seasoningNames" value="${escapeHtml(item.name)}"></label>
+          </div>`).join("") || `<p class="muted">沒有調味料</p>`}
+        <button>全部儲存</button>
+      </form>
+    </details>`;
+}
+
+function bulkRecipesEditor(recipes) {
+  if (!recipes.length) return "";
+  return html`
+    <details class="card">
+      <summary>批量修改菜色</summary>
+      <form data-action="bulkSaveRecipes">
+        ${recipes.map(item => html`
+          <div class="bulk-item">
+            <input type="hidden" name="recipeIds" value="${item.id}">
+            <input type="hidden" name="recipeBranchIds" value="${item.branchId || ""}">
+            <label>菜色名稱<input name="recipeNames" value="${escapeHtml(item.name)}"></label>
+            <label>熱量<input name="recipeCalories" type="number" min="0" value="${Number(item.calories || 0)}"></label>
+          </div>`).join("")}
+        <button>全部儲存</button>
+      </form>
+    </details>`;
+}
+
 function supplierRow(item, data) {
   return html`
-    <div class="row"><span><b>${escapeHtml(item.name)}</b><br><small>${escapeHtml(item.phone || "待補電話")}／${supplierUsage(data, item.id)} 樣食材</small></span><button class="danger" data-delete="suppliers:${item.id}">刪除錯誤供應商</button></div>
+    <div class="row"><span><b>${escapeHtml(item.name)}</b><br><small>${escapeHtml(item.owner || "待補負責人")}／${escapeHtml(item.taxId || "待補統編")}／${escapeHtml(item.phone || "待補電話")}／${supplierUsage(data, item.id)} 樣食材</small></span><button class="danger" data-delete="suppliers:${item.id}">刪除錯誤供應商</button></div>
     <details>
       <summary>修改供應商</summary>
       <form data-action="updateSupplier" data-id="${item.id}">
+        <input type="hidden" name="branchId" value="${item.branchId || ""}">
         <label>供應商名稱<input name="name" required value="${escapeHtml(item.name)}"></label>
         <label>負責人<input name="owner" required value="${escapeHtml(item.owner || "")}"></label>
         <label>統編<input name="taxId" required value="${escapeHtml(item.taxId || "")}"></label>
@@ -306,6 +365,7 @@ function ingredientRow(item, data, suppliers) {
     <details>
       <summary>修改食材</summary>
       <form data-action="updateIngredient" data-id="${item.id}">
+        <input type="hidden" name="branchId" value="${item.branchId || ""}">
         <label>食材名稱<input name="ingredientName" required value="${escapeHtml(item.ingredientName)}"></label>
         <label>產品名稱<input name="productName" value="${escapeHtml(item.productName || item.ingredientName)}"></label>
         <label>原產地<input name="origin" placeholder="不填會自動填臺灣" value="${escapeHtml(item.origin || "臺灣")}"></label>
@@ -322,6 +382,7 @@ function seasoningRow(item, data, suppliers) {
     <details>
       <summary>修改調味料</summary>
       <form data-action="updateSeasoning" data-id="${item.id}">
+        <input type="hidden" name="branchId" value="${item.branchId || ""}">
         <label>調味料名稱<input name="name" required value="${escapeHtml(item.name)}"></label>
         <label>供應商<select name="supplierId"><option value="">待補</option>${suppliers.map(s => `<option value="${s.id}" ${Number(item.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}</select></label>
         <button class="secondary">儲存修改</button>
@@ -341,6 +402,7 @@ function recipeRow(recipe, data) {
     <details>
       <summary>修改菜色與組成</summary>
       <form data-action="updateRecipe" data-id="${recipe.id}">
+        <input type="hidden" name="branchId" value="${recipe.branchId || ""}">
         <label>菜色名稱<input name="name" required value="${escapeHtml(recipe.name)}"></label>
         <label>熱量<input name="calories" type="number" min="0" value="${Number(recipe.calories || 0)}"></label>
         <h2>食材組成</h2>
@@ -399,24 +461,100 @@ async function handleSubmit(event) {
     return;
   }
   if (action === "updateSupplier") {
-    await put("suppliers", { id: Number(form.dataset.id), branchId, name: values.name, owner: values.owner, taxId: values.taxId, phone: values.phone, address: values.address });
+    await put("suppliers", { id: Number(form.dataset.id), branchId: optionalNumber(values.branchId), name: values.name, owner: values.owner, taxId: values.taxId, phone: values.phone, address: values.address });
   }
   if (action === "updateIngredient") {
-    await put("ingredients", { id: Number(form.dataset.id), branchId, ingredientName: values.ingredientName, productName: values.productName || values.ingredientName, origin: values.origin || "臺灣", supplierId: values.supplierId ? Number(values.supplierId) : null });
+    await put("ingredients", { id: Number(form.dataset.id), branchId: optionalNumber(values.branchId), ingredientName: values.ingredientName, productName: values.productName || values.ingredientName, origin: values.origin || "臺灣", supplierId: values.supplierId ? Number(values.supplierId) : null });
   }
   if (action === "updateSeasoning") {
-    await put("seasonings", { id: Number(form.dataset.id), branchId, name: values.name, supplierId: values.supplierId ? Number(values.supplierId) : null });
+    await put("seasonings", { id: Number(form.dataset.id), branchId: optionalNumber(values.branchId), name: values.name, supplierId: values.supplierId ? Number(values.supplierId) : null });
   }
   if (action === "updateRecipe") {
     const recipeId = Number(form.dataset.id);
-    await put("recipes", { id: recipeId, branchId, name: values.name, calories: Number(values.calories || 0) });
+    await put("recipes", { id: recipeId, branchId: optionalNumber(values.branchId), name: values.name, calories: Number(values.calories || 0) });
     await deleteWhere("recipeIngredients", link => Number(link.recipeId) === recipeId);
     await deleteWhere("recipeSeasonings", link => Number(link.recipeId) === recipeId);
     for (const input of form.querySelectorAll("input[name='ingredientIds']:checked")) await put("recipeIngredients", { recipeId, ingredientId: Number(input.value) });
     for (const input of form.querySelectorAll("input[name='seasoningIds']:checked")) await put("recipeSeasonings", { recipeId, seasoningId: Number(input.value) });
   }
+  if (action === "bulkSaveMasters") {
+    await bulkSaveMasters(form);
+    alert("資料已全部儲存");
+  }
+  if (action === "bulkSaveRecipes") {
+    await bulkSaveRecipes(form);
+    alert("菜色已全部儲存");
+  }
   form.reset();
   await render();
+}
+
+async function bulkSaveMasters(form) {
+  const data = await dataBundle();
+  const formData = new FormData(form);
+  const suppliers = arraysFromForm(formData, ["supplierIds", "supplierBranchIds", "supplierNames", "supplierOwners", "supplierTaxIds", "supplierPhones", "supplierAddresses"]);
+  for (const row of suppliers) {
+    if (!row.supplierIds || !row.supplierNames) continue;
+    await put("suppliers", {
+      id: Number(row.supplierIds),
+      branchId: optionalNumber(row.supplierBranchIds),
+      name: row.supplierNames,
+      owner: row.supplierOwners || "",
+      taxId: row.supplierTaxIds || "",
+      phone: row.supplierPhones || "",
+      address: row.supplierAddresses || ""
+    });
+  }
+  const ingredientsById = new Map(data.ingredients.map(item => [Number(item.id), item]));
+  const ingredients = arraysFromForm(formData, ["ingredientIds", "ingredientBranchIds", "ingredientNames", "ingredientProductNames", "ingredientOrigins"]);
+  for (const row of ingredients) {
+    if (!row.ingredientIds || !row.ingredientNames) continue;
+    const old = ingredientsById.get(Number(row.ingredientIds)) || {};
+    await put("ingredients", {
+      ...old,
+      id: Number(row.ingredientIds),
+      branchId: optionalNumber(row.ingredientBranchIds),
+      ingredientName: row.ingredientNames,
+      productName: row.ingredientProductNames || row.ingredientNames,
+      origin: row.ingredientOrigins || "臺灣"
+    });
+  }
+  const seasoningsById = new Map(data.seasonings.map(item => [Number(item.id), item]));
+  const seasonings = arraysFromForm(formData, ["seasoningIds", "seasoningBranchIds", "seasoningNames"]);
+  for (const row of seasonings) {
+    if (!row.seasoningIds || !row.seasoningNames) continue;
+    const old = seasoningsById.get(Number(row.seasoningIds)) || {};
+    await put("seasonings", {
+      ...old,
+      id: Number(row.seasoningIds),
+      branchId: optionalNumber(row.seasoningBranchIds),
+      name: row.seasoningNames
+    });
+  }
+}
+
+async function bulkSaveRecipes(form) {
+  const formData = new FormData(form);
+  const rows = arraysFromForm(formData, ["recipeIds", "recipeBranchIds", "recipeNames", "recipeCalories"]);
+  for (const row of rows) {
+    if (!row.recipeIds || !row.recipeNames) continue;
+    await put("recipes", {
+      id: Number(row.recipeIds),
+      branchId: optionalNumber(row.recipeBranchIds),
+      name: row.recipeNames,
+      calories: Number(row.recipeCalories || 0)
+    });
+  }
+}
+
+function arraysFromForm(formData, keys) {
+  const lists = Object.fromEntries(keys.map(key => [key, formData.getAll(key)]));
+  const length = Math.max(...keys.map(key => lists[key].length));
+  return Array.from({ length }, (_, index) => Object.fromEntries(keys.map(key => [key, lists[key][index] ?? ""])));
+}
+
+function optionalNumber(value) {
+  return value === "" || value === undefined || value === null ? null : Number(value);
 }
 
 async function bulkCreate(values, branchId) {
