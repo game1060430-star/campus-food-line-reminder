@@ -34,6 +34,7 @@ const WEEKDAYS = [
 
 let db;
 let state = { view: "home", branchId: "" };
+let backupDownloadUrl = "";
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -302,7 +303,8 @@ function renderBackup(data) {
     <div class="notice"><b>建議定期備份。</b><br>這個 Excel 就是手機本機資料的完整備份。存在 iCloud、Google Drive 或 LINE Keep 都可以。</div>
     <div class="card actions">
       <button data-action-click="exportBackup">匯出完整備份 Excel</button>
-      <label>匯入備份 Excel<input type="file" id="importBackup" accept=".xlsx"></label>
+      <label>匯入備份 Excel<input type="file" id="importBackup" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"></label>
+      <div id="backupResult"></div>
     </div>
     <h2>匯入官方舊檔建檔</h2>
     <div class="notice">從校園食材登錄網站下載的供應商、食材、菜單、調味料 Excel 可以直接匯入。請先選工作區；選分店就是建到那間店，選「分店管理／資源共享」就是建成共用資料。</div>
@@ -799,7 +801,30 @@ async function exportBackup() {
     const sheet = XLSX.utils.json_to_sheet(data[store]);
     XLSX.utils.book_append_sheet(workbook, sheet, LABELS[store]);
   }
-  XLSX.writeFile(workbook, `食材登錄備份_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  const filename = `食材登錄備份_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+  const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  showBackupDownload(blob, filename);
+  await shareFileIfAvailable(blob, filename);
+}
+
+function showBackupDownload(blob, filename) {
+  if (backupDownloadUrl) URL.revokeObjectURL(backupDownloadUrl);
+  backupDownloadUrl = URL.createObjectURL(blob);
+  const result = document.getElementById("backupResult");
+  if (!result) return;
+  result.innerHTML = html`
+    <div class="notice">
+      備份檔已產生。請點下面連結，或長按後選「下載連結檔案／儲存到檔案」。
+      <br><a class="btn" href="${backupDownloadUrl}" download="${escapeHtml(filename)}">${escapeHtml(filename)}</a>
+    </div>`;
+}
+
+async function shareFileIfAvailable(blob, filename) {
+  if (!("File" in window) || !navigator.canShare || !navigator.share) return;
+  const file = new File([blob], filename, { type: blob.type });
+  if (!navigator.canShare({ files: [file] })) return;
+  await navigator.share({ files: [file], title: "食材登錄備份" }).catch(() => {});
 }
 
 async function importBackup(file) {
