@@ -142,6 +142,13 @@ def set_item_scopes(item, item_type:str, branch_ids:list[int], db:Session):
 def parse_weekdays(raw:str) -> set[int]:
     return {int(x) for x in (raw or DEFAULT_WEEKDAYS).split(",") if x}
 
+def default_export_dates() -> tuple[str, str]:
+    start = date.today() + timedelta(days=1)
+    while start.weekday() >= 5:
+        start += timedelta(days=1)
+    end = start + timedelta(days=4)
+    return start.isoformat(), end.isoformat()
+
 def join_weekdays(values:list[str]) -> str|None:
     days=sorted({int(value) for value in values if str(value).isdigit()})
     return ",".join(str(day) for day in days) if days else None
@@ -409,9 +416,13 @@ async def bulk_create_recipes(request:Request, db:Session=Depends(get_db)):
 def exports_page(request:Request, db:Session=Depends(get_db)):
     branches=db.scalars(select(Branch).where(Branch.active==True).order_by(Branch.name)).all()
     selected_branch_id=int(request.query_params.get("branch_id") or (branches[0].id if branches else 0))
+    default_start, default_end = default_export_dates()
+    start_date = request.query_params.get("start_date") or default_start
+    end_date = request.query_params.get("end_date") or default_end
+    selected_weekdays = request.query_params.get("weekdays") or DEFAULT_WEEKDAYS
     recipes_all=db.scalars(select(Recipe).where(Recipe.active==True).order_by(Recipe.name)).all()
     recipes=filter_available(recipes_all,"recipe",selected_branch_id,branches,db)
-    return templates.TemplateResponse("exports.html",{"request":request,"branches":branches,"recipes":recipes,"selected_branch_id":selected_branch_id})
+    return templates.TemplateResponse("exports.html",{"request":request,"branches":branches,"recipes":recipes,"selected_branch_id":selected_branch_id,"start_date":start_date,"end_date":end_date,"selected_weekdays":selected_weekdays,"excluded_dates":"","selected_file_types":{"menu","ingredients"},"selected_recipe_ids":set()})
 
 @app.post("/exports")
 async def create_export(request:Request, db:Session=Depends(get_db)):
@@ -430,7 +441,7 @@ async def create_export(request:Request, db:Session=Depends(get_db)):
     recipes_all=db.scalars(select(Recipe).where(Recipe.active==True).order_by(Recipe.name)).all()
     recipes=filter_available(recipes_all,"recipe",branch_id,branches,db)
     if result.errors:
-        return templates.TemplateResponse("exports.html",{"request":request,"branches":branches,"recipes":recipes,"errors":result.errors,"warnings":result.warnings,"selected_branch_id":branch_id})
+        return templates.TemplateResponse("exports.html",{"request":request,"branches":branches,"recipes":recipes,"errors":result.errors,"warnings":result.warnings,"selected_branch_id":branch_id,"start_date":start_date.isoformat(),"end_date":end_date.isoformat(),"selected_weekdays":",".join(str(x) for x in sorted(weekdays)),"excluded_dates":str(form.get("excluded_dates") or ""),"selected_file_types":file_types,"selected_recipe_ids":set(recipe_ids)})
     download_files={label: path.relative_to(EXPORTS).as_posix() for label,path in result.files.items()}
     confirm_context={
         "branch_id": branch_id,
@@ -439,15 +450,16 @@ async def create_export(request:Request, db:Session=Depends(get_db)):
         "weekdays": ",".join(str(x) for x in sorted(weekdays)),
         "excluded_dates": ",".join(sorted(d.isoformat() for d in excluded)),
     }
-    return templates.TemplateResponse("exports.html",{"request":request,"branches":branches,"recipes":recipes,"warnings":result.warnings,"download_files":download_files,"download_token":web_access_token(),"row_counts":result.row_counts,"selected_branch_id":branch_id,"confirm_context":confirm_context})
+    return templates.TemplateResponse("exports.html",{"request":request,"branches":branches,"recipes":recipes,"warnings":result.warnings,"download_files":download_files,"download_token":web_access_token(),"row_counts":result.row_counts,"selected_branch_id":branch_id,"confirm_context":confirm_context,"start_date":start_date.isoformat(),"end_date":end_date.isoformat(),"selected_weekdays":",".join(str(x) for x in sorted(weekdays)),"excluded_dates":str(form.get("excluded_dates") or ""),"selected_file_types":file_types,"selected_recipe_ids":set(recipe_ids)})
 
 @app.get("/master-exports", response_class=HTMLResponse)
 def master_exports_page(request:Request, db:Session=Depends(get_db)):
     branches=db.scalars(select(Branch).where(Branch.active==True).order_by(Branch.name)).all()
     selected_branch_id=int(request.query_params.get("branch_id") or (branches[0].id if branches else 0))
+    default_start, default_end = default_export_dates()
     suppliers=filter_available(db.scalars(select(Supplier).where(Supplier.active==True).order_by(Supplier.name)).all(),"supplier",selected_branch_id,branches,db)
     seasonings=filter_available(db.scalars(select(Seasoning).where(Seasoning.active==True).order_by(Seasoning.name)).all(),"seasoning",selected_branch_id,branches,db)
-    return templates.TemplateResponse("master_exports.html",{"request":request,"branches":branches,"selected_branch_id":selected_branch_id,"suppliers":suppliers,"seasonings":seasonings})
+    return templates.TemplateResponse("master_exports.html",{"request":request,"branches":branches,"selected_branch_id":selected_branch_id,"suppliers":suppliers,"seasonings":seasonings,"start_date":request.query_params.get("start_date") or default_start,"end_date":request.query_params.get("end_date") or default_end})
 
 @app.post("/master-exports/suppliers", response_class=HTMLResponse)
 async def create_supplier_master_export(request:Request, db:Session=Depends(get_db)):
@@ -459,7 +471,8 @@ async def create_supplier_master_export(request:Request, db:Session=Depends(get_
     suppliers=filter_available(db.scalars(select(Supplier).where(Supplier.active==True).order_by(Supplier.name)).all(),"supplier",branch_id,branches,db)
     seasonings=filter_available(db.scalars(select(Seasoning).where(Seasoning.active==True).order_by(Seasoning.name)).all(),"seasoning",branch_id,branches,db)
     download_files={label: path.relative_to(EXPORTS).as_posix() for label,path in result.files.items()}
-    return templates.TemplateResponse("master_exports.html",{"request":request,"branches":branches,"selected_branch_id":branch_id,"suppliers":suppliers,"seasonings":seasonings,"errors":result.errors,"warnings":result.warnings,"download_files":download_files,"download_token":web_access_token(),"row_counts":result.row_counts})
+    default_start, default_end = default_export_dates()
+    return templates.TemplateResponse("master_exports.html",{"request":request,"branches":branches,"selected_branch_id":branch_id,"suppliers":suppliers,"seasonings":seasonings,"errors":result.errors,"warnings":result.warnings,"download_files":download_files,"download_token":web_access_token(),"row_counts":result.row_counts,"start_date":default_start,"end_date":default_end})
 
 @app.post("/master-exports/seasonings", response_class=HTMLResponse)
 async def create_seasoning_master_export(request:Request, db:Session=Depends(get_db)):
@@ -473,7 +486,7 @@ async def create_seasoning_master_export(request:Request, db:Session=Depends(get
     suppliers=filter_available(db.scalars(select(Supplier).where(Supplier.active==True).order_by(Supplier.name)).all(),"supplier",branch_id,branches,db)
     seasonings=filter_available(db.scalars(select(Seasoning).where(Seasoning.active==True).order_by(Seasoning.name)).all(),"seasoning",branch_id,branches,db)
     download_files={label: path.relative_to(EXPORTS).as_posix() for label,path in result.files.items()}
-    return templates.TemplateResponse("master_exports.html",{"request":request,"branches":branches,"selected_branch_id":branch_id,"suppliers":suppliers,"seasonings":seasonings,"errors":result.errors,"warnings":result.warnings,"download_files":download_files,"download_token":web_access_token(),"row_counts":result.row_counts})
+    return templates.TemplateResponse("master_exports.html",{"request":request,"branches":branches,"selected_branch_id":branch_id,"suppliers":suppliers,"seasonings":seasonings,"errors":result.errors,"warnings":result.warnings,"download_files":download_files,"download_token":web_access_token(),"row_counts":result.row_counts,"start_date":start_date.isoformat(),"end_date":end_date.isoformat()})
 
 @app.get("/uploads", response_class=HTMLResponse)
 def uploads_page(request:Request, branch_id:int|None=None, date:str|None=None, db:Session=Depends(get_db)):

@@ -356,6 +356,8 @@ def build_export(
     branch = db.get(Branch, branch_id)
     if not branch:
         return ExportResult({}, ["找不到分店。"], [], {})
+    if end < start:
+        return ExportResult({}, ["結束日期不能早於開始日期。"], [], {})
 
     dates = service_dates(start, end, weekdays, excluded_dates)
     needs_menu_data = bool(file_types & {"menu", "ingredients", "seasonings"})

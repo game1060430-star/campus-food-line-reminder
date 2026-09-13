@@ -24,17 +24,29 @@
 </div>
 {% endif %}
 <form method="post" class="card form">
-  <label>分店<select name="branch_id" required onchange="location='/exports?branch_id='+this.value">{% for b in branches %}<option value="{{b.id}}" {% if selected_branch_id == b.id %}selected{% endif %}>{{b.name}}／{{b.school_name}}／{{b.restaurant_name}}</option>{% endfor %}</select></label>
+  <label>分店<select name="branch_id" required onchange="changeExportBranch(this)">{% for b in branches %}<option value="{{b.id}}" {% if selected_branch_id == b.id %}selected{% endif %}>{{b.name}}／{{b.school_name}}／{{b.restaurant_name}}</option>{% endfor %}</select></label>
   <details open>
     <summary>下載項目</summary>
-    <label class="check"><input type="checkbox" name="file_types" value="menu" checked><span>菜單 Excel</span></label>
-    <label class="check"><input type="checkbox" name="file_types" value="ingredients" checked><span>食材 Excel</span></label>
+    <label class="check"><input type="checkbox" name="file_types" value="menu" {% if 'menu' in selected_file_types %}checked{% endif %}><span>菜單 Excel</span></label>
+    <label class="check"><input type="checkbox" name="file_types" value="ingredients" {% if 'ingredients' in selected_file_types %}checked{% endif %}><span>食材 Excel</span></label>
   </details>
-  <label>開始日期<input type="date" name="start_date" value="2026-09-14" required></label>
-  <label>結束日期<input type="date" name="end_date" value="2026-12-31" required></label>
-  <label>登錄日<select name="weekdays"><option value="0,1,2,3,4">週一到週五</option><option value="0,1,2,3,4,5">週一到週六</option><option value="0,1,2,3,4,5,6">每天</option></select></label>
-  <label>額外排除日期<textarea name="excluded_dates" rows="3" placeholder="一行或逗號分隔，例如：2026-10-09, 2026-10-10"></textarea></label>
-  <details open><summary>要登錄的菜色</summary><p class="muted">只會列出這個分店可用的菜色。有勾選時，會把勾選菜色套用到每個登錄日；都不勾時，使用已排好的菜單。若只下載供應商，可不用勾菜色。</p>{% for r in recipes %}<label class="check"><input type="checkbox" name="recipe_ids" value="{{r.id}}"><span>{{r.name}}／{{r.calories}} kcal{% if r.branch_id %}／分店專用{% else %}／共用{% endif %}</span></label>{% else %}<p>尚未建立菜色。</p>{% endfor %}</details>
+  <label>開始日期<input type="date" name="start_date" value="{{start_date}}" required></label>
+  <label>結束日期<input type="date" name="end_date" value="{{end_date}}" required></label>
+  <label>登錄日<select name="weekdays"><option value="0,1,2,3,4" {% if selected_weekdays == '0,1,2,3,4' %}selected{% endif %}>週一到週五</option><option value="0,1,2,3,4,5" {% if selected_weekdays == '0,1,2,3,4,5' %}selected{% endif %}>週一到週六</option><option value="0,1,2,3,4,5,6" {% if selected_weekdays == '0,1,2,3,4,5,6' %}selected{% endif %}>每天</option></select></label>
+  <label>額外排除日期<textarea name="excluded_dates" rows="3" placeholder="一行或逗號分隔，例如：2026-10-09, 2026-10-10">{{excluded_dates}}</textarea></label>
+  <details open><summary>要登錄的菜色</summary><p class="muted">只會列出這個分店可用的菜色。有勾選時，會把勾選菜色套用到每個登錄日；都不勾時，使用已排好的菜單。若只下載供應商，可不用勾菜色。</p>{% for r in recipes %}<label class="check"><input type="checkbox" name="recipe_ids" value="{{r.id}}" {% if r.id in selected_recipe_ids %}checked{% endif %}><span>{{r.name}}／{{r.calories}} kcal{% if r.branch_id %}／分店專用{% else %}／共用{% endif %}</span></label>{% else %}<p>尚未建立菜色。</p>{% endfor %}</details>
   <button>檢查並產生 Excel</button>
 </form>
+<script>
+function changeExportBranch(select) {
+  const form = select.form;
+  const params = new URLSearchParams({
+    branch_id: select.value,
+    start_date: form.start_date.value,
+    end_date: form.end_date.value,
+    weekdays: form.weekdays.value
+  });
+  location = '/exports?' + params.toString();
+}
+</script>
 {% endblock %}
