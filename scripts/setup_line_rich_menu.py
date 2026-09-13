@@ -85,27 +85,27 @@ def build_image() -> None:
     width, height = 2500, 1686
     img = Image.new("RGB", (width, height), "#f3f5f0")
     draw = ImageDraw.Draw(img)
-    title_font = font(106)
-    small_font = font(42)
-    icon_font = font(92)
+    title_font = font(76)
+    small_font = font(34)
+    icon_font = font(78)
 
     tiles = [
         ("查詢已登錄狀況", "看哪些日期已上傳 / 未上傳", "#0f766e", "1"),
         ("設定休假不提醒", "區間設定或月曆點選", "#be123c", "2"),
         ("LINE 操作說明", "已上傳 / 休假 / 查詢格式", "#4338ca", "3"),
     ]
-    tile_h = height // 3
+    tile_w = width // 3
     for idx, (label, sub, color, mark) in enumerate(tiles):
-        y1 = idx * tile_h
-        y2 = height if idx == len(tiles) - 1 else y1 + tile_h
-        draw.rectangle((0, y1, width, y2), fill="#ffffff")
-        draw.rectangle((34, y1 + 26, width - 34, y2 - 26), outline=color, width=10)
-        draw.ellipse((95, y1 + 148, 285, y1 + 338), fill=color)
-        center_text(draw, (95, y1 + 148, 285, y1 + 338), mark, "#ffffff", icon_font)
-        draw.text((365, y1 + 132), label, font=title_font, fill="#111827")
-        draw.text((372, y1 + 292), sub, font=small_font, fill="#4b5563")
+        x1 = idx * tile_w
+        x2 = width if idx == len(tiles) - 1 else x1 + tile_w
+        draw.rectangle((x1, 0, x2, height), fill="#ffffff")
+        draw.rectangle((x1 + 24, 34, x2 - 24, height - 34), outline=color, width=10)
+        draw.ellipse((x1 + 310, 235, x1 + 500, 425), fill=color)
+        center_text(draw, (x1 + 310, 235, x1 + 500, 425), mark, "#ffffff", icon_font)
+        center_text(draw, (x1 + 50, 560, x2 - 50, 760), label, "#111827", title_font)
+        center_text(draw, (x1 + 70, 815, x2 - 70, 970), sub, "#4b5563", small_font)
         if idx < len(tiles) - 1:
-            draw.line((0, y2, width, y2), fill="#d1d5db", width=6)
+            draw.line((x2, 0, x2, height), fill="#d1d5db", width=6)
     img.save(IMAGE_PATH, "PNG", optimize=True)
 
 
@@ -123,9 +123,9 @@ def main() -> None:
         "name": "食材登錄快捷選單",
         "chatBarText": "快捷操作",
         "areas": [
-            {"bounds": {"x": 0, "y": 0, "width": 2500, "height": 562}, "action": {"type": "message", "text": "查詢已登錄狀況"}},
-            {"bounds": {"x": 0, "y": 562, "width": 2500, "height": 562}, "action": {"type": "uri", "uri": secure("/uploads")}},
-            {"bounds": {"x": 0, "y": 1124, "width": 2500, "height": 562}, "action": {"type": "message", "text": "說明"}},
+            {"bounds": {"x": 0, "y": 0, "width": 833, "height": 1686}, "action": {"type": "message", "text": "查詢已登錄狀況"}},
+            {"bounds": {"x": 833, "y": 0, "width": 834, "height": 1686}, "action": {"type": "message", "text": "設定休假不提醒"}},
+            {"bounds": {"x": 1667, "y": 0, "width": 833, "height": 1686}, "action": {"type": "message", "text": "說明"}},
         ],
     }
     response = request_json("https://api.line.me/v2/bot/richmenu", token, payload)

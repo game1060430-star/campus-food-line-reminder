@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..line_bot import LineConfig, push_text, secure_web_url
+from ..line_bot import LineConfig, line_bound_web_url, push_text
 from ..models import Branch, ClosedDate, DailyMenu, LineUserBinding, UploadConfirmation
 
 
@@ -62,13 +62,6 @@ def send_due_upload_reminders(db: Session, target_date: date | None = None, conf
             ).all()
         )
         status = f"已排 {menu_count} 道菜" if menu_count else "尚未排菜"
-        link = secure_web_url(config, f"/uploads?branch_id={branch.id}&date={target.isoformat()}")
-        text = (
-            f"提醒：{branch.name} 明天 {target.isoformat()} 尚未確認食材登錄已上傳。\n"
-            f"{status}。\n"
-            f"若已到官方平台上傳，請把食材登錄網頁產生的「已上傳 {branch.name} ...」文字貼給我，我會自動記錄。\n"
-            f"要設定休假或不提醒日：{link}"
-        )
         bindings = db.scalars(
             select(LineUserBinding).where(
                 LineUserBinding.branch_id == branch.id,
@@ -80,6 +73,13 @@ def send_due_upload_reminders(db: Session, target_date: date | None = None, conf
             continue
         for binding in bindings:
             try:
+                link = line_bound_web_url(config, binding.line_user_id, f"/uploads?branch_id={branch.id}&date={target.isoformat()}")
+                text = (
+                    f"提醒：{branch.name} 明天 {target.isoformat()} 尚未確認食材登錄已上傳。\n"
+                    f"{status}。\n"
+                    f"若已到官方平台上傳，請把食材登錄網頁產生的「已上傳 {branch.name} ...」文字貼給我，我會自動記錄。\n"
+                    f"要設定休假或不提醒日：{link}"
+                )
                 if push_text(binding.line_user_id, text, config):
                     sent += 1
             except Exception as exc:

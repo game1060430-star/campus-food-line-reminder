@@ -1,5 +1,9 @@
 import os
 import secrets
+import base64
+import hashlib
+import hmac
+import time
 from io import BytesIO
 from datetime import date, timedelta
 from pathlib import Path
@@ -12,7 +16,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import inspect, or_, select, text
 from .database import Base, engine, get_db
 from .line_bot import LineConfig, handle_line_event, reply_text, verify_line_signature
-from .models import Branch, Supplier, Ingredient, Seasoning, Recipe, RecipeIngredient, RecipeSeasoning, DailyMenu, ItemBranchScope, LineBindingCode, UploadConfirmation, ClosedDate
+from .models import Branch, Supplier, Ingredient, Seasoning, Recipe, RecipeIngredient, RecipeSeasoning, DailyMenu, ItemBranchScope, LineBindingCode, LineUserBinding, UploadConfirmation, ClosedDate
 from .services.excel_export import EXPORTS, build_export, build_seasoning_export, build_supplier_export, parse_excluded_dates, service_dates
 from .services.upload_reminders import send_due_upload_reminders
 
@@ -81,11 +85,63 @@ templates = Jinja2Templates(directory=str(BASE/"templates"))
 app.mount("/static", StaticFiles(directory=str(BASE/"static")), name="static")
 app.mount("/phone-app", StaticFiles(directory=str(ROOT_DIR/"phone_app"), html=True), name="phone_app")
 
-PUBLIC_PREFIXES=("/api/line/webhook","/static/","/phone-app","/health","/login")
+PUBLIC_PREFIXES=("/api/line/webhook","/static/","/phone-app","/health","/login","/line-login")
 DEFAULT_WEEKDAYS="0,1,2,3,4"
 
 def web_access_token() -> str:
     return os.getenv("WEB_ACCESS_TOKEN","").strip()
+
+def _b64url(value:bytes) -> str:
+    return base64.urlsafe_b64encode(value).decode().rstrip("=")
+
+def _b64url_decode(value:str) -> bytes:
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+def make_line_access_token(line_user_id:str, max_age_seconds:int=60*60*24*7) -> str:
+    secret=web_access_token()
+    if not secret:
+        return ""
+    expires=str(int(time.time())+max_age_seconds)
+    payload=_b64url(f"{line_user_id}|{expires}".encode())
+    signature=_b64url(hmac.new(secret.encode(),payload.encode(),hashlib.sha256).digest())
+    return f"{payload}.{signature}"
+
+def verify_line_access_token(token:str) -> str|None:
+    secret=web_access_token()
+    if not secret or "." not in (token or ""):
+        return None
+    payload, signature = token.split(".",1)
+    expected=_b64url(hmac.new(secret.encode(),payload.encode(),hashlib.sha256).digest())
+    if not hmac.compare_digest(signature, expected):
+        return None
+    try:
+        raw=_b64url_decode(payload).decode()
+        line_user_id, expires = raw.rsplit("|",1)
+    except Exception:
+        return None
+    if int(expires) < int(time.time()):
+        return None
+    return line_user_id
+
+def line_user_id_from_request(request:Request) -> str|None:
+    return getattr(request.state,"line_user_id",None)
+
+def bound_branch_ids_for_request(request:Request, db:Session) -> set[int]|None:
+    line_user_id=line_user_id_from_request(request)
+    if not line_user_id:
+        return None
+    return set(db.scalars(select(LineUserBinding.branch_id).where(LineUserBinding.line_user_id==line_user_id, LineUserBinding.active==True)).all())
+
+def filter_branches_for_request(request:Request, branches:list[Branch], db:Session) -> list[Branch]:
+    allowed=bound_branch_ids_for_request(request,db)
+    if allowed is None:
+        return branches
+    return [branch for branch in branches if branch.id in allowed]
+
+def require_branch_allowed(request:Request, db:Session, branch_id:int):
+    allowed=bound_branch_ids_for_request(request,db)
+    if allowed is not None and branch_id not in allowed:
+        raise HTTPException(403)
 
 def scoped_query(model, branch_id:int|None):
     if branch_id:
@@ -312,6 +368,10 @@ async def require_web_access(request:Request, call_next):
     query_token=request.query_params.get("token","")
     if token and query_token and secrets.compare_digest(query_token, token):
         return await call_next(request)
+    line_user_id=verify_line_access_token(request.cookies.get("line_access",""))
+    if line_user_id:
+        request.state.line_user_id=line_user_id
+        return await call_next(request)
     if token and request.cookies.get("web_access") != token:
         return PlainTextResponse("此頁面只開放給已綁定的 LINE 管理員。請從 LINE 官方帳號取得安全連結。",status_code=403)
     return await call_next(request)
@@ -324,6 +384,17 @@ def login_with_token(token:str="", next:str="/"):
         next="/"
     response=RedirectResponse(next,303)
     response.set_cookie("web_access",token,httponly=True,samesite="lax",max_age=60*60*24*30)
+    return response
+
+@app.get("/line-login")
+def login_with_line_token(token:str="", next:str="/"):
+    line_user_id=verify_line_access_token(token)
+    if not line_user_id:
+        raise HTTPException(403)
+    if not next.startswith("/") or next.startswith("//"):
+        next="/uploads"
+    response=RedirectResponse(next,303)
+    response.set_cookie("line_access",token,httponly=True,samesite="lax",max_age=60*60*24*7)
     return response
 
 @app.get("/", response_class=HTMLResponse)
@@ -509,8 +580,12 @@ async def create_seasoning_master_export(request:Request, db:Session=Depends(get
 
 @app.get("/uploads", response_class=HTMLResponse)
 def uploads_page(request:Request, branch_id:int|None=None, date:str|None=None, db:Session=Depends(get_db)):
-    branches=db.scalars(select(Branch).where(Branch.active==True).order_by(Branch.name)).all()
+    branches=filter_branches_for_request(request,db.scalars(select(Branch).where(Branch.active==True).order_by(Branch.name)).all(),db)
+    if line_user_id_from_request(request) and not branches:
+        return PlainTextResponse("這個 LINE 帳號尚未綁定任何分店。請先在系統分店頁產生綁定碼，再到 LINE 傳「綁定 綁定碼」。",status_code=403)
     selected_branch_id=branch_id or (branches[0].id if branches else 0)
+    if selected_branch_id:
+        require_branch_allowed(request,db,selected_branch_id)
     selected_date=date or date_today_iso()
     start=date_from_iso(selected_date)
     days=[start+timedelta(days=i) for i in range(14)]
@@ -540,14 +615,16 @@ def date_from_iso(value:str) -> date:
     return date.fromisoformat(value)
 
 @app.post("/uploads/confirm")
-def confirm_upload(branch_id:int=Form(...), start_date:date=Form(...), end_date:date=Form(...), weekdays:str=Form(DEFAULT_WEEKDAYS), excluded_dates:str=Form(""), confirmed_by:str=Form(""), note:str=Form(""), db:Session=Depends(get_db)):
+def confirm_upload(request:Request, branch_id:int=Form(...), start_date:date=Form(...), end_date:date=Form(...), weekdays:str=Form(DEFAULT_WEEKDAYS), excluded_dates:str=Form(""), confirmed_by:str=Form(""), note:str=Form(""), db:Session=Depends(get_db)):
+    require_branch_allowed(request,db,branch_id)
     excluded=parse_excluded_dates(excluded_dates)
     dates=service_dates(start_date,end_date,parse_weekdays(weekdays),excluded)
     confirm_upload_dates(db,branch_id,dates,confirmed_by,note)
     return RedirectResponse(f"/uploads?branch_id={branch_id}&date={start_date.isoformat()}&notice=confirmed",303)
 
 @app.post("/uploads/closed")
-def mark_closed_dates(branch_id:int=Form(...), start_date:date=Form(...), end_date:date=Form(...), weekdays:str=Form("0,1,2,3,4,5,6"), excluded_dates:str=Form(""), reason:str=Form(""), db:Session=Depends(get_db)):
+def mark_closed_dates(request:Request, branch_id:int=Form(...), start_date:date=Form(...), end_date:date=Form(...), weekdays:str=Form("0,1,2,3,4,5,6"), excluded_dates:str=Form(""), reason:str=Form(""), db:Session=Depends(get_db)):
+    require_branch_allowed(request,db,branch_id)
     excluded=parse_excluded_dates(excluded_dates)
     dates=service_dates(start_date,end_date,parse_weekdays(weekdays),excluded)
     set_closed_dates(db,branch_id,dates,reason)
@@ -557,6 +634,7 @@ def mark_closed_dates(branch_id:int=Form(...), start_date:date=Form(...), end_da
 async def update_upload_calendar(request:Request, db:Session=Depends(get_db)):
     form=await request.form()
     branch_id=int(form.get("branch_id") or 0)
+    require_branch_allowed(request,db,branch_id)
     action=str(form.get("calendar_action") or "")
     selected=[date.fromisoformat(str(value)) for value in form.getlist("dates")]
     month_date=str(form.get("month_date") or date_today_iso())

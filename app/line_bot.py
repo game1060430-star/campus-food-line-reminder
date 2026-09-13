@@ -4,6 +4,8 @@ import hmac
 import json
 import os
 import secrets
+import base64
+import time
 from urllib.parse import urlencode
 import urllib.request
 from dataclasses import dataclass
@@ -126,6 +128,9 @@ def handle_line_text(text: str, line_user_id: str, db: Session, config: LineConf
         return secure_web_link(config)
     if normalized in {"說明", "help", "Help", "HELP"}:
         return help_text(bindings)
+    if normalized in {"設定休假不提醒", "設定不提醒日期", "休假設定", "不提醒設定"}:
+        url = line_bound_web_url(config, line_user_id, "/uploads")
+        return f"設定休假 / 不提醒日期：{url}" if url else "尚未設定 WEB_ACCESS_TOKEN，無法產生專屬連結。"
     if normalized.startswith(("已上傳", "確認上傳", "上傳完成")):
         return record_upload_confirmation_from_text(normalized, bindings, db)
     if normalized.startswith(("休息", "休息日", "公休", "休假", "不提醒")):
@@ -141,7 +146,8 @@ def handle_line_text(text: str, line_user_id: str, db: Session, config: LineConf
     if normalized in {"首頁", "主選單", "工作區", "分店管理", "資源共享"}:
         return f"系統首頁：{secure_web_url(config, '/')}"
     if normalized in {"確認上傳", "上傳確認", "我已上傳"}:
-        return f"上傳確認：{secure_web_url(config, '/uploads')}"
+        url = line_bound_web_url(config, line_user_id, "/uploads")
+        return f"上傳確認：{url}" if url else f"上傳確認：{secure_web_url(config, '/uploads')}"
     if normalized in {"食材", "進貨", "新增食材"}:
         return f"食材主檔：{secure_web_url(config, '/ingredients')}"
     return help_text()
@@ -224,6 +230,27 @@ def secure_web_url(config: LineConfig, path: str = "/") -> str:
     if not token:
         return ""
     return f"{config.app_base_url}/login?{urlencode({'token': token, 'next': path})}"
+
+
+def line_bound_web_url(config: LineConfig, line_user_id: str, path: str = "/uploads") -> str:
+    token = make_line_access_token(line_user_id)
+    if not token:
+        return ""
+    return f"{config.app_base_url}/line-login?{urlencode({'token': token, 'next': path})}"
+
+
+def make_line_access_token(line_user_id: str, max_age_seconds: int = 60 * 60 * 24 * 7) -> str:
+    secret = os.getenv("WEB_ACCESS_TOKEN", "").strip()
+    if not secret:
+        return ""
+    expires = str(int(time.time()) + max_age_seconds)
+    payload = _b64url(f"{line_user_id}|{expires}".encode())
+    signature = _b64url(hmac.new(secret.encode(), payload.encode(), hashlib.sha256).digest())
+    return f"{payload}.{signature}"
+
+
+def _b64url(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).decode().rstrip("=")
 
 
 def identity_text(bindings: list[LineUserBinding], db: Session) -> str:
