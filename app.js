@@ -1066,6 +1066,7 @@ function buildOfficialRows(data, branch, recipeIds, startDate, endDate) {
   const seasoningIds = usedSeasoningIds(data, recipes);
   const suppliers = availableForBranch(data.suppliers, branch.id);
   const rows = { menus: [], ingredients: [], seasonings: [], suppliers: [] };
+  const ingredientRowKeys = new Set();
   for (const date of dates) {
     for (const recipe of recipes) {
       const recipeIngredients = data.recipeIngredients
@@ -1076,7 +1077,11 @@ function buildOfficialRows(data, branch, recipeIds, startDate, endDate) {
       for (const link of data.recipeIngredients.filter(item => Number(item.recipeId) === Number(recipe.id))) {
         const ingredient = data.ingredients.find(item => Number(item.id) === Number(link.ingredientId));
         const supplier = data.suppliers.find(item => Number(item.id) === Number(ingredient?.supplierId));
-        rows.ingredients.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, date, purchaseDateFor(date, supplier), ingredient?.productName || "", ingredient?.ingredientName || "", ingredient?.origin || "", supplier?.name || ""]);
+        const purchaseDate = purchaseDateFor(date, supplier);
+        const key = [purchaseDate, ingredient?.id || "", supplier?.id || ""].join("|");
+        if (ingredientRowKeys.has(key)) continue;
+        ingredientRowKeys.add(key);
+        rows.ingredients.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, date, purchaseDate, ingredient?.productName || "", ingredient?.ingredientName || "", ingredient?.origin || "", supplier?.name || ""]);
       }
     }
   }
