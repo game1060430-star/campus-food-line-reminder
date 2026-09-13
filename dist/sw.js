@@ -1,4 +1,4 @@
-const CACHE = "campus-food-local-v7";
+const CACHE = "campus-food-local-v8";
 const ASSETS = [
   "./",
   "./index.html",
@@ -6,6 +6,8 @@ const ASSETS = [
   "./app.js",
   "./manifest.json",
   "./icon.svg",
+  "./vendor/xlsx.full.min.js",
+  "./vendor/jszip.min.js",
   "./templates/PreMenuExcelExample.xlsx",
   "./templates/PrerestaurantingredientExcelExample.xlsx",
   "./templates/seasoningstockdataCollegeExcelExample.xlsx",
