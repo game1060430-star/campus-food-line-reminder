@@ -262,6 +262,7 @@ function renderRecipes(data) {
       <button>新增菜色</button>
     </form>
     ${bulkRecipesEditor(recipes)}
+    ${bulkRecipeCompositionEditor(recipes, ingredients, seasonings, data)}
     <div class="card">${recipes.length ? recipes.map(recipe => recipeRow(recipe, data)).join("") : `<div class="empty">尚未建立菜色</div>`}</div>`;
 }
 
@@ -368,6 +369,36 @@ function bulkRecipesEditor(recipes) {
             <label>熱量<input name="recipeCalories" type="number" min="0" value="${Number(item.calories || 0)}"></label>
           </div>`).join("")}
         <button>全部儲存</button>
+      </form>
+    </details>`;
+}
+
+function bulkRecipeCompositionEditor(recipes, ingredients, seasonings, data) {
+  if (!recipes.length) return "";
+  if (!ingredients.length && !seasonings.length) return "";
+  return html`
+    <details class="card" open>
+      <summary>批量編輯菜色組成</summary>
+      <p class="muted">每道菜可以一次勾好食材和調味料，全部改完後按一次儲存。</p>
+      <form data-action="bulkSaveRecipeComposition">
+        ${recipes.map(recipe => {
+          const ingredientIds = new Set(data.recipeIngredients.filter(link => Number(link.recipeId) === Number(recipe.id)).map(link => Number(link.ingredientId)));
+          const seasoningIds = new Set(data.recipeSeasonings.filter(link => Number(link.recipeId) === Number(recipe.id)).map(link => Number(link.seasoningId)));
+          return html`
+          <details class="composition-item">
+            <summary>${escapeHtml(recipe.name)} <small>${ingredientIds.size} 食材／${seasoningIds.size} 調味料</small></summary>
+            <input type="hidden" name="recipeIds" value="${recipe.id}">
+            <h2>食材</h2>
+            <div class="choice-grid">
+              ${ingredients.map(item => `<label class="check chip"><input type="checkbox" name="recipe_${recipe.id}_ingredientIds" value="${item.id}" ${ingredientIds.has(Number(item.id)) ? "checked" : ""}><span>${escapeHtml(item.ingredientName)}</span></label>`).join("") || `<p class="muted">尚未建立食材</p>`}
+            </div>
+            <h2>調味料</h2>
+            <div class="choice-grid">
+              ${seasonings.map(item => `<label class="check chip"><input type="checkbox" name="recipe_${recipe.id}_seasoningIds" value="${item.id}" ${seasoningIds.has(Number(item.id)) ? "checked" : ""}><span>${escapeHtml(item.name)}</span></label>`).join("") || `<p class="muted">尚未建立調味料</p>`}
+            </div>
+          </details>`;
+        }).join("")}
+        <button>全部儲存菜色組成</button>
       </form>
     </details>`;
 }
@@ -580,6 +611,10 @@ async function handleSubmit(event) {
     await bulkSaveRecipes(form);
     alert("菜色已全部儲存");
   }
+  if (action === "bulkSaveRecipeComposition") {
+    await bulkSaveRecipeComposition(form);
+    alert("菜色組成已全部儲存");
+  }
   form.reset();
   await render();
 }
@@ -642,6 +677,22 @@ async function bulkSaveRecipes(form) {
       name: row.recipeNames,
       calories: Number(row.recipeCalories || 0)
     });
+  }
+}
+
+async function bulkSaveRecipeComposition(form) {
+  const formData = new FormData(form);
+  const recipeIds = formData.getAll("recipeIds").map(Number).filter(Boolean);
+  const selectedRecipeIds = new Set(recipeIds);
+  await deleteWhere("recipeIngredients", link => selectedRecipeIds.has(Number(link.recipeId)));
+  await deleteWhere("recipeSeasonings", link => selectedRecipeIds.has(Number(link.recipeId)));
+  for (const recipeId of recipeIds) {
+    for (const ingredientId of formData.getAll(`recipe_${recipeId}_ingredientIds`).map(Number).filter(Boolean)) {
+      await put("recipeIngredients", { recipeId, ingredientId });
+    }
+    for (const seasoningId of formData.getAll(`recipe_${recipeId}_seasoningIds`).map(Number).filter(Boolean)) {
+      await put("recipeSeasonings", { recipeId, seasoningId });
+    }
   }
 }
 
