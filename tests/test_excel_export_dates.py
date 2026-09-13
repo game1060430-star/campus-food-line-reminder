@@ -49,6 +49,25 @@ def test_write_rows_leaves_unstarred_official_columns_blank(tmp_path):
     result.close()
 
 
+def test_write_rows_can_include_menu_ingredient_composition(tmp_path):
+    path = tmp_path / "official.xlsx"
+    path.write_bytes((TEMPLATES / "PreMenuExcelExample.xlsx").read_bytes())
+
+    write_rows(
+        path,
+        "菜色清單",
+        [["A校", "午餐", "A餐廳", date(2026, 9, 14), "不應寫入", "蘑菇麵", "油麵、蘑菇醬", 550]],
+        {4},
+        {7},
+    )
+
+    result = load_workbook(path)
+    sheet = result["菜色清單"]
+    assert sheet.cell(2, 5).value is None
+    assert sheet.cell(2, 7).value == "油麵、蘑菇醬"
+    result.close()
+
+
 def test_required_columns_fallback_to_all_columns_when_template_has_no_stars():
     wb = Workbook()
     ws = wb.active

@@ -212,11 +212,11 @@ def write_rows_to_sheet_xml(sheet_xml: str, rows: list[list], columns_to_write: 
     return re.sub(r'(<sheetData>).*?(</sheetData>)', rf'\1{header}{"".join(data_rows)}\2', sheet_xml, count=1, flags=re.DOTALL)
 
 
-def write_rows(path: Path, sheet_name: str, rows: list[list], date_cols: set[int] | None = None) -> int:
+def write_rows(path: Path, sheet_name: str, rows: list[list], date_cols: set[int] | None = None, extra_columns: set[int] | None = None) -> int:
     wb = load_workbook(path, read_only=True)
     sheet = wb[sheet_name]
     max_col = sheet.max_column
-    columns_to_write = required_column_indexes(sheet)
+    columns_to_write = required_column_indexes(sheet) | (extra_columns or set())
     wb.close()
 
     string_values = [
@@ -526,7 +526,7 @@ def build_export(
     files = {}
     if "menu" in file_types:
         menu_path = copy_template("PreMenuExcelExample.xlsx", out_dir, f"{prefix}_菜單_{start:%Y%m%d}_{end:%Y%m%d}.xlsx")
-        counts["menu"] = write_rows(menu_path, "菜色清單", menu_rows, {4})
+        counts["menu"] = write_rows(menu_path, "菜色清單", menu_rows, {4}, {7})
         files["菜單"] = menu_path
     if "ingredients" in file_types:
         ingredient_path = copy_template("PrerestaurantingredientExcelExample.xlsx", out_dir, f"{prefix}_食材_{start:%Y%m%d}_{end:%Y%m%d}.xlsx")
