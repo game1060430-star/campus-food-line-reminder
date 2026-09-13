@@ -12,3 +12,6 @@ logs/
 backup_data.json
 app/static/captcha/
 data/current/
+render_git_source_*/
+render_git_clone_*_20260914/
+site-*.tar.gz
