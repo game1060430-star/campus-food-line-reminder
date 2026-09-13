@@ -16,7 +16,7 @@ services:
       - key: APP_BASE_URL
         sync: false
       - key: WEB_ACCESS_TOKEN
-        generateValue: true
+        sync: false
       - key: LINE_CHANNEL_SECRET
         sync: false
       - key: LINE_CHANNEL_ACCESS_TOKEN
