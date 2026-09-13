@@ -728,7 +728,17 @@ def ingredients_page(request:Request, db:Session=Depends(get_db)):
         if recipe:
             ingredient_recipes.setdefault(link.ingredient_id,[]).append(recipe)
     ingredient_scope_map=scope_map_for(items,"ingredient",branches,db)
-    return templates.TemplateResponse("ingredients.html",{"request":request,"branches":branches,"suppliers":suppliers,"items":items,"supplier_map":supplier_map,"branch_map":branch_map,"ingredient_recipes":ingredient_recipes,"scope_map":ingredient_scope_map,"blocked":request.query_params.get("blocked"),"selected_branch_id":selected_branch_id})
+    missing_fields_by_ingredient={
+        item.id: [
+            label for label,value in [
+                ("產品名稱", item.product_name),
+                ("原產地", item.origin),
+                ("供應商", supplier_map.get(item.supplier_id)),
+            ] if not value
+        ]
+        for item in items
+    }
+    return templates.TemplateResponse("ingredients.html",{"request":request,"branches":branches,"suppliers":suppliers,"items":items,"supplier_map":supplier_map,"branch_map":branch_map,"ingredient_recipes":ingredient_recipes,"scope_map":ingredient_scope_map,"missing_fields_by_ingredient":missing_fields_by_ingredient,"blocked":request.query_params.get("blocked"),"selected_branch_id":selected_branch_id})
 
 @app.post("/ingredients")
 def create_ingredient(product_name:str=Form(...), ingredient_name:str=Form(...), origin:str=Form(""), supplier_id:int=Form(...), branch_id:str=Form(""), manufacturer:str=Form(""), unit:str=Form(""), certification:str=Form(""), certification_no:str=Form(""), db:Session=Depends(get_db)):
@@ -736,6 +746,33 @@ def create_ingredient(product_name:str=Form(...), ingredient_name:str=Form(...),
     db.add(Ingredient(product_name=product_name,ingredient_name=ingredient_name,origin=origin.strip() or "臺灣",supplier_id=supplier_id,branch_id=branch_value,manufacturer=manufacturer or None,unit=unit or None,certification=certification or None,certification_no=certification_no or None))
     db.commit()
     return redirect_with_branch('/ingredients',branch_value)
+
+@app.post("/ingredients/bulk-update")
+async def bulk_update_ingredients(request:Request, db:Session=Depends(get_db)):
+    form=await request.form()
+    ids=[int(x) for x in form.getlist("ingredient_ids") if str(x).isdigit()]
+    product_names=[str(x).strip() for x in form.getlist("product_names")]
+    ingredient_names=[str(x).strip() for x in form.getlist("ingredient_names")]
+    origins=[str(x).strip() for x in form.getlist("origins")]
+    supplier_ids=[str(x).strip() for x in form.getlist("supplier_ids")]
+    branch_ids=[str(x).strip() for x in form.getlist("branch_ids")]
+    selected_branch=optional_branch_id(str(form.get("selected_branch_id") or ""))
+    for index, ingredient_id in enumerate(ids):
+        ingredient=db.get(Ingredient,ingredient_id)
+        if not ingredient:
+            continue
+        name=ingredient_names[index] if index < len(ingredient_names) else ingredient.ingredient_name
+        product=product_names[index] if index < len(product_names) else ingredient.product_name
+        origin=origins[index] if index < len(origins) else ingredient.origin
+        supplier_raw=supplier_ids[index] if index < len(supplier_ids) else ""
+        branch_raw=branch_ids[index] if index < len(branch_ids) else ""
+        ingredient.ingredient_name=name or ingredient.ingredient_name
+        ingredient.product_name=product or ingredient.ingredient_name
+        ingredient.origin=origin or "臺灣"
+        ingredient.supplier_id=int(supplier_raw) if supplier_raw.isdigit() else None
+        ingredient.branch_id=optional_branch_id(branch_raw)
+    db.commit()
+    return redirect_with_branch('/ingredients',selected_branch)
 
 @app.post("/ingredients/{ingredient_id}/update")
 def update_ingredient(ingredient_id:int, product_name:str=Form(...), ingredient_name:str=Form(...), origin:str=Form(""), supplier_id:int=Form(...), branch_id:str=Form(""), manufacturer:str=Form(""), unit:str=Form(""), certification:str=Form(""), certification_no:str=Form(""), db:Session=Depends(get_db)):

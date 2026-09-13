@@ -25,6 +25,50 @@
 </form>
 {% endif %}
 
+{% if items %}
+{% set missing_count = namespace(value=0) %}
+{% for x in items %}{% if missing_fields_by_ingredient.get(x.id) %}{% set missing_count.value = missing_count.value + 1 %}{% endif %}{% endfor %}
+<details class="card" {% if missing_count.value %}open{% endif %}>
+  <summary>批量補齊食材資料{% if missing_count.value %}：{{missing_count.value}} 筆待補{% endif %}</summary>
+  <p class="muted">直接在表格裡補產品名稱、原產地、供應商或套用範圍，全部改好後按一次儲存。原產地不填會自動存成「臺灣」。</p>
+  <form method="post" action="/ingredients/bulk-update">
+    <input type="hidden" name="selected_branch_id" value="{{selected_branch_id or ''}}">
+    <div class="table-scroll">
+      <table class="bulk-table">
+        <thead><tr><th>狀態</th><th>食材名稱</th><th>產品名稱</th><th>原產地</th><th>供應商</th><th>套用範圍</th></tr></thead>
+        <tbody>
+        {% for x in items %}
+        {% set missing = missing_fields_by_ingredient.get(x.id, []) %}
+        <tr class="{% if missing %}needs-work{% endif %}">
+          <td>{% if missing %}<span class="status failed">缺 {{missing|join('、')}}</span>{% else %}<span class="status success">完整</span>{% endif %}</td>
+          <td>
+            <input type="hidden" name="ingredient_ids" value="{{x.id}}">
+            <input name="ingredient_names" value="{{x.ingredient_name}}" required>
+          </td>
+          <td><input name="product_names" value="{{x.product_name or x.ingredient_name}}" required></td>
+          <td><input name="origins" value="{{x.origin or '臺灣'}}" placeholder="臺灣"></td>
+          <td>
+            <select name="supplier_ids">
+              <option value="">待補</option>
+              {% for s in suppliers %}<option value="{{s.id}}" {% if x.supplier_id == s.id %}selected{% endif %}>{{s.name}}{% if s.branch_id %}／分店專用{% else %}／共用{% endif %}</option>{% endfor %}
+            </select>
+          </td>
+          <td>
+            <select name="branch_ids">
+              <option value="" {% if not x.branch_id %}selected{% endif %}>共用</option>
+              {% for b in branches %}<option value="{{b.id}}" {% if x.branch_id == b.id %}selected{% endif %}>{{b.name}}</option>{% endfor %}
+            </select>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button>全部儲存食材資料</button>
+  </form>
+</details>
+{% endif %}
+
 {% for x in items %}
 {% set used_by = ingredient_recipes.get(x.id, []) %}
 <div class="card">
