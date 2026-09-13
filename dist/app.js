@@ -301,6 +301,16 @@ function renderBackup(data) {
       <button data-action-click="exportBackup">匯出完整備份 Excel</button>
       <label>匯入備份 Excel<input type="file" id="importBackup" accept=".xlsx"></label>
     </div>
+    <h2>匯入官方舊檔建檔</h2>
+    <div class="notice">從校園食材登錄網站下載的供應商、食材、菜單、調味料 Excel 可以直接匯入。請先選工作區；選分店就是建到那間店，選「分店管理／資源共享」就是建成共用資料。</div>
+    <div class="card">
+      ${branchSelect(data.branches)}
+      <label>供應商 Excel<input type="file" data-official-import="suppliers" accept=".xlsx,.xls"></label>
+      <label>食材 Excel<input type="file" data-official-import="ingredients" accept=".xlsx,.xls"></label>
+      <label>菜單／菜色 Excel<input type="file" data-official-import="recipes" accept=".xlsx,.xls"></label>
+      <label>調味料 Excel<input type="file" data-official-import="seasonings" accept=".xlsx,.xls"></label>
+      <div id="officialImportResult"></div>
+    </div>
     <div class="grid">
       ${STORES.map(store => `<div class="card"><b>${LABELS[store]}</b><br><small>${data[store].length} 筆</small></div>`).join("")}
     </div>`;
@@ -760,6 +770,119 @@ async function importBackup(file) {
   await render();
 }
 
+async function importOfficialWorkbook(file, type) {
+  if (!window.XLSX) throw new Error("Excel 讀取元件尚未載入，請重新整理一次。");
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+  const branchId = state.branchId ? Number(state.branchId) : null;
+  const data = await dataBundle();
+  const rows = officialRows(workbook, type);
+  const errors = [];
+  let created = 0;
+  if (type === "suppliers") created = await importOfficialSuppliers(rows, branchId, data, errors);
+  if (type === "ingredients") created = await importOfficialIngredients(rows, branchId, data, errors);
+  if (type === "recipes") created = await importOfficialRecipes(rows, branchId, data);
+  if (type === "seasonings") created = await importOfficialSeasonings(rows, branchId, data, errors);
+  return { created, errors };
+}
+
+function officialRows(workbook, type) {
+  const preferred = type === "suppliers" ? "Data" : type === "seasonings" ? "Sheet1" : workbook.SheetNames[0];
+  const sheet = workbook.Sheets[workbook.SheetNames.includes(preferred) ? preferred : workbook.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false }).slice(1);
+}
+
+async function importOfficialSuppliers(rows, branchId, data, errors) {
+  let created = 0;
+  const existing = new Set(data.suppliers.filter(item => sameScopeForImport(item, branchId)).map(item => normalizeName(item.name)));
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const name = cleanCell(row[0]);
+    if (!name || existing.has(normalizeName(name))) continue;
+    const owner = cleanCell(row[1]);
+    const taxId = cleanCell(row[2]);
+    const address = cleanCell(row[3]);
+    const phone = cleanCell(row[4]);
+    if (!owner || !taxId || !address || !phone) {
+      errors.push(`第 ${index + 2} 列供應商「${name}」缺少負責人、統編、地址或電話，已略過。`);
+      continue;
+    }
+    await put("suppliers", { ...importScope(branchId), name, owner, taxId, address, phone, deliveryWeekdays: "" });
+    existing.add(normalizeName(name));
+    created += 1;
+  }
+  return created;
+}
+
+async function importOfficialIngredients(rows, branchId, data, errors) {
+  let created = 0;
+  const suppliers = await all("suppliers");
+  const supplierByName = new Map(suppliers.map(item => [normalizeName(item.name), item]));
+  const existing = new Set(data.ingredients.filter(item => sameScopeForImport(item, branchId)).map(item => normalizeName(item.ingredientName)));
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const productName = cleanCell(row[5]);
+    const ingredientName = cleanCell(row[6]) || productName;
+    const origin = cleanCell(row[7]) || "臺灣";
+    const supplierName = cleanCell(row[8]);
+    if (!ingredientName || existing.has(normalizeName(ingredientName))) continue;
+    const supplier = supplierByName.get(normalizeName(supplierName));
+    if (supplierName && !supplier) errors.push(`第 ${index + 2} 列食材「${ingredientName}」找不到供應商「${supplierName}」，已先建成待補供應商。`);
+    await put("ingredients", { ...importScope(branchId), ingredientName, productName: productName || ingredientName, origin, supplierId: supplier?.id ? Number(supplier.id) : null });
+    existing.add(normalizeName(ingredientName));
+    created += 1;
+  }
+  return created;
+}
+
+async function importOfficialRecipes(rows, branchId, data) {
+  let created = 0;
+  const existing = new Set(data.recipes.filter(item => sameScopeForImport(item, branchId)).map(item => normalizeName(item.name)));
+  for (const row of rows) {
+    const name = cleanCell(row[5]);
+    if (!name || existing.has(normalizeName(name))) continue;
+    await put("recipes", { ...importScope(branchId), name, calories: Number(cleanCell(row[7]) || 0) || 0 });
+    existing.add(normalizeName(name));
+    created += 1;
+  }
+  return created;
+}
+
+async function importOfficialSeasonings(rows, branchId, data, errors) {
+  let created = 0;
+  const suppliers = await all("suppliers");
+  const supplierByName = new Map(suppliers.map(item => [normalizeName(item.name), item]));
+  const existing = new Set(data.seasonings.filter(item => sameScopeForImport(item, branchId)).map(item => normalizeName(item.name)));
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const name = cleanCell(row[3]);
+    const supplierName = cleanCell(row[9]);
+    if (!name || existing.has(normalizeName(name))) continue;
+    const supplier = supplierByName.get(normalizeName(supplierName));
+    if (!supplier) {
+      errors.push(`第 ${index + 2} 列調味料「${name}」找不到供應商「${supplierName || "空白"}」，已略過。`);
+      continue;
+    }
+    await put("seasonings", { ...importScope(branchId), name, supplierId: Number(supplier.id) });
+    existing.add(normalizeName(name));
+    created += 1;
+  }
+  return created;
+}
+
+function importScope(branchId) {
+  return branchId ? { branchId, branchIds: [branchId] } : { branchId: null, branchIds: [] };
+}
+
+function sameScopeForImport(item, branchId) {
+  if (!branchId) return !scopeIds(item).length;
+  return availableForBranchId(item, branchId);
+}
+
+function cleanCell(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
 async function downloadOfficial(form) {
   if (!window.JSZip) {
     alert("Excel 下載元件尚未載入，請確認有網路後重新整理一次。");
@@ -1039,6 +1162,19 @@ document.addEventListener("change", async event => {
   if (event.target.id === "importBackup" && event.target.files[0]) {
     if (confirm("匯入會覆蓋這支手機目前資料，確定？")) await importBackup(event.target.files[0]);
     event.target.value = "";
+  }
+  if (event.target.dataset.officialImport && event.target.files[0]) {
+    const resultBox = document.getElementById("officialImportResult");
+    try {
+      resultBox.innerHTML = `<div class="notice">正在匯入...</div>`;
+      const result = await importOfficialWorkbook(event.target.files[0], event.target.dataset.officialImport);
+      alert(`匯入完成：新增 ${result.created} 筆。${result.errors.length ? "\n" + result.errors.join("\n") : ""}`);
+      await render();
+    } catch (error) {
+      resultBox.innerHTML = `<div class="notice"><b>匯入失敗</b><br>${escapeHtml(error.message || error)}</div>`;
+    } finally {
+      event.target.value = "";
+    }
   }
 });
 document.addEventListener("click", async event => {
