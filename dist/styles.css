@@ -10,6 +10,7 @@ h1{font-size:24px;margin:8px 0 14px}
 h2{font-size:18px;margin:22px 0 10px}
 .card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin:10px 0}
 .notice{background:#fff8df;border:1px solid #ead28a;border-radius:10px;padding:12px 14px;margin:10px 0;color:#3b2f12}
+.notice.ok{background:#ecfdf5;border-color:#86efac;color:#064e3b}
 .grid{display:grid;gap:10px}
 .actions{display:grid;gap:8px}
 .row{display:flex;justify-content:space-between;gap:10px;align-items:center;border-top:1px solid #eee;padding:12px 0}
@@ -26,6 +27,8 @@ button.danger{background:#9f1239}
 .check input{width:auto}
 .empty{color:#64748b;text-align:center;padding:24px 8px}
 .warning-list{margin:8px 0 0;padding-left:18px;color:#9f1239}
+.danger-text{color:#9f1239;font-weight:700}
+.repair-panel summary{font-weight:800}
 .split-actions{display:grid;grid-template-columns:1fr;gap:8px}
 .bulk-item{border-top:1px solid #eee;padding:12px 0;display:grid;gap:4px}
 .bulk-item:first-of-type{border-top:0}
