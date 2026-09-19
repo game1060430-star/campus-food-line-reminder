@@ -209,6 +209,7 @@ function renderMasters(data) {
   return html`
     <h1>資料管理</h1>
     <div class="card">${branchSelect(data.branches)}</div>
+    ${renderRepairPanel(data, state.branchId || data.branches[0]?.id || "", collectRepairIssues(data, state.branchId || data.branches[0]?.id || ""))}
     <h2>初期大量建檔</h2>
     <form class="card" data-action="bulkNames">
       <label>供應商／調味料
@@ -220,7 +221,7 @@ function renderMasters(data) {
       <button>批量建立名稱</button>
       <p class="muted">先大量建立名稱就好。供應商負責人、統編、電話、地址可以之後再補；食材原產地空白會先用「臺灣」。</p>
     </form>
-    ${bulkMastersEditor(suppliers, ingredients, seasonings)}
+    ${bulkMastersEditor(suppliers, ingredients, seasonings, data.branches)}
     <h2>供應商</h2>
     <form class="card" data-action="addSupplier">
       <label>供應商名稱<input name="name" required></label>
@@ -266,7 +267,7 @@ function renderRecipes(data) {
       ${seasonings.map(s => `<label class="check"><input type="checkbox" name="seasoningIds" value="${s.id}"><span>${escapeHtml(s.name)}</span></label>`).join("") || `<p class="muted">尚未建立調味料</p>`}
       <button>新增菜色</button>
     </form>
-    ${bulkRecipesEditor(recipes)}
+    ${bulkRecipesEditor(recipes, data.branches)}
     ${bulkRecipeCompositionEditor(recipes, ingredients, seasonings, data)}
     <div class="card">${recipes.length ? recipes.map(recipe => recipeRow(recipe, data)).join("") : `<div class="empty">尚未建立菜色</div>`}</div>`;
 }
@@ -412,12 +413,13 @@ function renderBackup(data) {
     </div>`;
 }
 
-function bulkMastersEditor(suppliers, ingredients, seasonings) {
+function bulkMastersEditor(suppliers, ingredients, seasonings, branches) {
   if (!suppliers.length && !ingredients.length && !seasonings.length) return "";
   return html`
-    <details class="card">
-      <summary>批量修改資料</summary>
+    <details class="card" open>
+      <summary>批量修改資料，一次儲存</summary>
       <form data-action="bulkSaveMasters">
+        <p class="muted">這裡可以一次補齊供應商、食材、調味料和可用分店。全部改完後按最下面的「全部儲存」。</p>
         <h2>供應商</h2>
         ${suppliers.map(item => html`
           <div class="bulk-item">
@@ -428,6 +430,7 @@ function bulkMastersEditor(suppliers, ingredients, seasonings) {
             <label>統編<input name="supplierTaxIds" value="${escapeHtml(item.taxId || "")}"></label>
             <label>電話<input name="supplierPhones" value="${escapeHtml(item.phone || "")}"></label>
             <label>地址<input name="supplierAddresses" value="${escapeHtml(item.address || "")}"></label>
+            ${bulkScopeControls("supplier", item, branches)}
           </div>`).join("") || `<p class="muted">沒有供應商</p>`}
         <h2>食材</h2>
         ${ingredients.map(item => html`
@@ -438,6 +441,7 @@ function bulkMastersEditor(suppliers, ingredients, seasonings) {
             <label>產品<input name="ingredientProductNames" value="${escapeHtml(item.productName || item.ingredientName)}"></label>
             <label>產地<input name="ingredientOrigins" value="${escapeHtml(item.origin || "臺灣")}"></label>
             <label>供應商<select name="ingredientSupplierIds"><option value="">待補</option>${suppliers.map(s => `<option value="${s.id}" ${Number(item.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}</select></label>
+            ${bulkScopeControls("ingredient", item, branches)}
           </div>`).join("") || `<p class="muted">沒有食材</p>`}
         <h2>調味料</h2>
         ${seasonings.map(item => html`
@@ -445,28 +449,44 @@ function bulkMastersEditor(suppliers, ingredients, seasonings) {
             <input type="hidden" name="seasoningIds" value="${item.id}">
             <input type="hidden" name="seasoningBranchIds" value="${item.branchId || ""}">
             <label>調味料<input name="seasoningNames" value="${escapeHtml(item.name)}"></label>
+            <label>供應商<select name="seasoningSupplierIds"><option value="">待補</option>${suppliers.map(s => `<option value="${s.id}" ${Number(item.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}</select></label>
+            ${bulkScopeControls("seasoning", item, branches)}
           </div>`).join("") || `<p class="muted">沒有調味料</p>`}
         <button>全部儲存</button>
       </form>
     </details>`;
 }
 
-function bulkRecipesEditor(recipes) {
+function bulkRecipesEditor(recipes, branches) {
   if (!recipes.length) return "";
   return html`
-    <details class="card">
-      <summary>批量修改菜色</summary>
+    <details class="card" open>
+      <summary>批量修改菜色，一次儲存</summary>
       <form data-action="bulkSaveRecipes">
+        <p class="muted">菜色名稱、熱量、可用分店都可以在這裡一次改完。</p>
         ${recipes.map(item => html`
           <div class="bulk-item">
             <input type="hidden" name="recipeIds" value="${item.id}">
             <input type="hidden" name="recipeBranchIds" value="${item.branchId || ""}">
             <label>菜色名稱<input name="recipeNames" value="${escapeHtml(item.name)}"></label>
             <label>熱量<input name="recipeCalories" type="number" min="0" value="${Number(item.calories || 0)}"></label>
+            ${bulkScopeControls("recipe", item, branches)}
           </div>`).join("")}
         <button>全部儲存</button>
       </form>
     </details>`;
+}
+
+function bulkScopeControls(prefix, item, branches) {
+  const selected = new Set(scopeIds(item).map(String));
+  return html`
+    <div class="bulk-scope">
+      <b>可用分店</b>
+      <small>不勾任何分店代表全部分店共用。</small>
+      <div class="choice-grid">
+        ${branches.map(branch => `<label class="check chip"><input type="checkbox" name="${prefix}_${item.id}_scopeBranchIds" value="${branch.id}" ${selected.has(String(branch.id)) ? "checked" : ""}><span>${escapeHtml(branch.name)}</span></label>`).join("") || `<p class="muted">尚未建立分店</p>`}
+      </div>
+    </div>`;
 }
 
 function bulkRecipeCompositionEditor(recipes, ingredients, seasonings, data) {
@@ -734,7 +754,7 @@ async function bulkSaveMasters(form) {
     await put("suppliers", {
       ...old,
       id: Number(row.supplierIds),
-      branchId: optionalNumber(row.supplierBranchIds),
+      ...bulkScopePayload(formData, "supplier", row.supplierIds, row.supplierBranchIds),
       name: row.supplierNames,
       owner: row.supplierOwners || "",
       taxId: row.supplierTaxIds || "",
@@ -750,7 +770,7 @@ async function bulkSaveMasters(form) {
     await put("ingredients", {
       ...old,
       id: Number(row.ingredientIds),
-      branchId: optionalNumber(row.ingredientBranchIds),
+      ...bulkScopePayload(formData, "ingredient", row.ingredientIds, row.ingredientBranchIds),
       ingredientName: row.ingredientNames,
       productName: row.ingredientProductNames || row.ingredientNames,
       origin: row.ingredientOrigins || "臺灣",
@@ -758,15 +778,16 @@ async function bulkSaveMasters(form) {
     });
   }
   const seasoningsById = new Map(data.seasonings.map(item => [Number(item.id), item]));
-  const seasonings = arraysFromForm(formData, ["seasoningIds", "seasoningBranchIds", "seasoningNames"]);
+  const seasonings = arraysFromForm(formData, ["seasoningIds", "seasoningBranchIds", "seasoningNames", "seasoningSupplierIds"]);
   for (const row of seasonings) {
     if (!row.seasoningIds || !row.seasoningNames) continue;
     const old = seasoningsById.get(Number(row.seasoningIds)) || {};
     await put("seasonings", {
       ...old,
       id: Number(row.seasoningIds),
-      branchId: optionalNumber(row.seasoningBranchIds),
-      name: row.seasoningNames
+      ...bulkScopePayload(formData, "seasoning", row.seasoningIds, row.seasoningBranchIds),
+      name: row.seasoningNames,
+      supplierId: row.seasoningSupplierIds ? Number(row.seasoningSupplierIds) : null
     });
   }
 }
@@ -836,11 +857,17 @@ async function bulkSaveRecipes(form) {
     if (!row.recipeIds || !row.recipeNames) continue;
     await put("recipes", {
       id: Number(row.recipeIds),
-      branchId: optionalNumber(row.recipeBranchIds),
+      ...bulkScopePayload(formData, "recipe", row.recipeIds, row.recipeBranchIds),
       name: row.recipeNames,
       calories: Number(row.recipeCalories || 0)
     });
   }
+}
+
+function bulkScopePayload(formData, prefix, id, fallbackBranchId) {
+  const branchIds = formData.getAll(`${prefix}_${id}_scopeBranchIds`).map(Number).filter(Boolean);
+  if (branchIds.length) return { branchId: branchIds[0], branchIds };
+  return { branchId: null, branchIds: [] };
 }
 
 async function bulkSaveRecipeComposition(form) {
