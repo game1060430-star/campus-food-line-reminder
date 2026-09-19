@@ -36,4 +36,6 @@ button.danger{background:#9f1239}
 .composition-item:first-of-type{border-top:0}
 .choice-grid{display:grid;grid-template-columns:1fr;gap:8px;margin:8px 0 12px}
 .chip{border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin:0;background:#fafafa}
+.download-list{display:grid;gap:10px;margin-top:12px}
+.download-item{display:grid;gap:8px;padding:12px;border:1px solid #ead28a;border-radius:10px;background:#fff}
 @media(min-width:720px){.grid{grid-template-columns:1fr 1fr}.actions{grid-template-columns:1fr 1fr}}
