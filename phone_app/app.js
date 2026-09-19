@@ -436,7 +436,8 @@ function bulkMasterModeButtons() {
     ["ingredientSuppliers", "設定食材供應商"],
     ["ingredientRecipes", "設定食材使用菜色"],
     ["seasoningSuppliers", "設定調味料供應商"],
-    ["scopes", "設定可用分店"]
+    ["scopes", "設定可用分店"],
+    ["delete", "批量刪除"]
   ];
   return html`
     <h2>批量修改</h2>
@@ -454,8 +455,14 @@ function bulkMastersEditor(suppliers, ingredients, seasonings, branches, recipes
     ingredientSuppliers: "設定食材供應商",
     ingredientRecipes: "設定食材使用菜色",
     seasoningSuppliers: "設定調味料供應商",
-    scopes: "設定可用分店"
+    scopes: "設定可用分店",
+    delete: "批量刪除"
   }[mode] || "批量修改資料";
+  if (mode === "delete") return bulkDeleteEditor([
+    ["suppliers", "供應商", suppliers, item => `${item.name || "未命名供應商"}／${supplierUsage({ ingredients }, item.id)} 樣食材`],
+    ["ingredients", "食材", ingredients, item => `${item.ingredientName || "未命名食材"}／${supplierName(suppliers, item.supplierId)}`],
+    ["seasonings", "調味料", seasonings, item => `${item.name || "未命名調味料"}／${supplierName(suppliers, item.supplierId)}`]
+  ]);
   return html`
     <details class="card" open>
       <summary>${title}，一次儲存</summary>
@@ -561,7 +568,8 @@ function bulkRecipeModeButtons() {
   const modes = [
     ["details", "修改菜色資料"],
     ["scopes", "設定菜色分店"],
-    ["composition", "編輯菜色組成"]
+    ["composition", "編輯菜色組成"],
+    ["delete", "批量刪除"]
   ];
   return html`
     <h2>批量修改</h2>
@@ -573,6 +581,9 @@ function bulkRecipeModeButtons() {
 
 function bulkRecipesEditor(recipes, branches, mode) {
   if (!recipes.length) return "";
+  if (mode === "delete") return bulkDeleteEditor([
+    ["recipes", "菜色", recipes, item => `${item.name || "未命名菜色"}／${Number(item.calories || 0)} kcal`]
+  ]);
   if (!["details", "scopes"].includes(mode)) return "";
   const title = mode === "details" ? "修改菜色資料" : "設定菜色分店";
   return html`
@@ -596,6 +607,29 @@ function bulkRecipesEditor(recipes, branches, mode) {
             `}
           </div>`).join("")}
         <button>全部儲存</button>
+      </form>
+    </details>`;
+}
+
+function bulkDeleteEditor(groups) {
+  const hasItems = groups.some(([, , items]) => items.length);
+  if (!hasItems) return `<div class="card empty">沒有可刪除的資料</div>`;
+  return html`
+    <details class="card" open>
+      <summary>批量刪除</summary>
+      <form data-action="bulkDeleteRecords">
+        <div class="notice"><b>請小心使用。</b><br>刪除後會同步清理相關連結，例如刪食材會從菜色組成移除。</div>
+        ${groups.map(([store, label, items, describe]) => html`
+          <h2>${label}</h2>
+          <div class="split-actions">
+            <button type="button" class="secondary" data-check-all="delete_${store}">全選${label}</button>
+            <button type="button" class="secondary" data-uncheck-all="delete_${store}">清除${label}</button>
+          </div>
+          <div class="choice-grid">
+            ${items.map(item => `<label class="check chip"><input type="checkbox" name="deleteRecords" data-delete-group="delete_${store}" value="${store}:${item.id}"><span>${escapeHtml(describe(item))}</span></label>`).join("") || `<p class="muted">沒有${label}</p>`}
+          </div>
+        `).join("")}
+        <button class="danger">刪除勾選資料</button>
       </form>
     </details>`;
 }
@@ -855,6 +889,12 @@ async function handleSubmit(event) {
     await bulkSaveMasters(form);
     alert("資料已全部儲存");
   }
+  if (action === "bulkDeleteRecords") {
+    await bulkDeleteRecords(form);
+    form.reset();
+    await render();
+    return;
+  }
   if (action === "repairMissingData") {
     await repairMissingData(form);
     alert("待補資料已儲存");
@@ -930,6 +970,18 @@ async function bulkSaveIngredientRecipeUsage(formData) {
     const recipeIds = formData.getAll(`ingredient_${ingredientId}_recipeIds`).map(Number).filter(Boolean);
     for (const recipeId of recipeIds) await put("recipeIngredients", { recipeId, ingredientId });
   }
+}
+
+async function bulkDeleteRecords(form) {
+  const records = new FormData(form).getAll("deleteRecords");
+  if (!records.length) return alert("請先勾選要刪除的資料。");
+  if (!confirm(`確定刪除勾選的 ${records.length} 筆資料？這個動作不能復原。`)) return;
+  for (const target of records) {
+    const [store, id] = String(target).split(":");
+    if (!store || !id) continue;
+    await deleteRecord(store, id);
+  }
+  alert(`已刪除 ${records.length} 筆資料`);
 }
 
 async function repairMissingData(form) {
@@ -1864,13 +1916,13 @@ document.addEventListener("click", async event => {
   }
   const checkAll = event.target.closest("[data-check-all]");
   if (checkAll) {
-    document.querySelectorAll(`input[name="${checkAll.dataset.checkAll}"]`).forEach(input => {
+    document.querySelectorAll(`input[name="${checkAll.dataset.checkAll}"], input[data-delete-group="${checkAll.dataset.checkAll}"]`).forEach(input => {
       input.checked = true;
     });
   }
   const uncheckAll = event.target.closest("[data-uncheck-all]");
   if (uncheckAll) {
-    document.querySelectorAll(`input[name="${uncheckAll.dataset.uncheckAll}"]`).forEach(input => {
+    document.querySelectorAll(`input[name="${uncheckAll.dataset.uncheckAll}"], input[data-delete-group="${uncheckAll.dataset.uncheckAll}"]`).forEach(input => {
       input.checked = false;
     });
   }
