@@ -353,6 +353,7 @@ function renderRepairFields(data, branchId, issues) {
         </div>`).join("")}` : ""}
     ${issues.ingredients.length ? html`
       <h2>食材待補</h2>
+      <p class="muted">缺供應商的食材可以直接在這裡選供應商；如果是轉檔多出來或不需要的食材，也可以直接刪除。</p>
       ${issues.ingredients.map(item => html`
         <div class="bulk-item">
           <input type="hidden" name="repairIngredientIds" value="${item.ingredient.id}">
@@ -361,12 +362,13 @@ function renderRepairFields(data, branchId, issues) {
           <label>食材名稱<input name="repairIngredientNames" value="${escapeHtml(item.ingredient.ingredientName || "")}"></label>
           <label>產品名稱<input name="repairIngredientProductNames" value="${escapeHtml(item.ingredient.productName || item.ingredient.ingredientName || "")}"></label>
           <label>原產地<input name="repairIngredientOrigins" value="${escapeHtml(item.ingredient.origin || "臺灣")}"></label>
-          <label>供應商
+          <label>這筆食材的供應商（必填）
             <select name="repairIngredientSupplierIds">
               <option value="">待補</option>
               ${suppliers.map(s => `<option value="${s.id}" ${Number(item.ingredient.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name || "未命名供應商")}</option>`).join("")}
             </select>
           </label>
+          <button type="button" class="danger" data-delete="ingredients:${item.ingredient.id}">刪除這個食材</button>
         </div>`).join("")}` : ""}
     ${issues.seasonings.length ? html`
       <h2>調味料待補</h2>
@@ -382,7 +384,7 @@ function renderRepairFields(data, branchId, issues) {
             </select>
           </label>
         </div>`).join("")}` : ""}
-    ${!supplierOptions ? `<p class="muted">尚未建立供應商時，請先到「資料建檔」新增供應商，再回來補食材供應商。</p>` : ""}`;
+    ${!supplierOptions ? `<div class="notice"><b>目前沒有可選的供應商。</b><br>請先到「資料」新增供應商，或先刪除這些不需要的食材。</div>` : ""}`;
 }
 
 function renderBackup(data) {
