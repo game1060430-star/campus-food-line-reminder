@@ -34,7 +34,7 @@ const WEEKDAYS = [
 ];
 
 let db;
-let state = { view: "home", branchId: "" };
+let state = { view: "home", branchId: "", masterBatchMode: "", recipeBatchMode: "" };
 let backupDownloadUrl = "";
 const generatedDownloads = new Map();
 
@@ -221,7 +221,8 @@ function renderMasters(data) {
       <button>批量建立名稱</button>
       <p class="muted">先大量建立名稱就好。供應商負責人、統編、電話、地址可以之後再補；食材原產地空白會先用「臺灣」。</p>
     </form>
-    ${bulkMastersEditor(suppliers, ingredients, seasonings, data.branches)}
+    ${bulkMasterModeButtons()}
+    ${bulkMastersEditor(suppliers, ingredients, seasonings, data.branches, state.masterBatchMode)}
     <h2>供應商</h2>
     <form class="card" data-action="addSupplier">
       <label>供應商名稱<input name="name" required></label>
@@ -267,8 +268,9 @@ function renderRecipes(data) {
       ${seasonings.map(s => `<label class="check"><input type="checkbox" name="seasoningIds" value="${s.id}"><span>${escapeHtml(s.name)}</span></label>`).join("") || `<p class="muted">尚未建立調味料</p>`}
       <button>新增菜色</button>
     </form>
-    ${bulkRecipesEditor(recipes, data.branches)}
-    ${bulkRecipeCompositionEditor(recipes, ingredients, seasonings, data)}
+    ${bulkRecipeModeButtons()}
+    ${bulkRecipesEditor(recipes, data.branches, state.recipeBatchMode)}
+    ${state.recipeBatchMode === "composition" ? bulkRecipeCompositionEditor(recipes, ingredients, seasonings, data) : ""}
     <div class="card">${recipes.length ? recipes.map(recipe => recipeRow(recipe, data)).join("") : `<div class="empty">尚未建立菜色</div>`}</div>`;
 }
 
@@ -413,15 +415,37 @@ function renderBackup(data) {
     </div>`;
 }
 
-function bulkMastersEditor(suppliers, ingredients, seasonings, branches) {
+function bulkMasterModeButtons() {
+  const modes = [
+    ["suppliers", "補供應商資料"],
+    ["ingredientSuppliers", "設定食材供應商"],
+    ["seasoningSuppliers", "設定調味料供應商"],
+    ["scopes", "設定可用分店"]
+  ];
+  return html`
+    <h2>批量修改</h2>
+    <div class="card mode-grid">
+      ${modes.map(([mode, label]) => `<button type="button" class="${state.masterBatchMode === mode ? "" : "secondary"}" data-master-batch-mode="${mode}">${label}</button>`).join("")}
+      ${state.masterBatchMode ? `<button type="button" class="secondary" data-master-batch-mode="">收起批量修改</button>` : ""}
+    </div>`;
+}
+
+function bulkMastersEditor(suppliers, ingredients, seasonings, branches, mode) {
   if (!suppliers.length && !ingredients.length && !seasonings.length) return "";
+  if (!mode) return "";
+  const title = {
+    suppliers: "補供應商資料",
+    ingredientSuppliers: "設定食材供應商",
+    seasoningSuppliers: "設定調味料供應商",
+    scopes: "設定可用分店"
+  }[mode] || "批量修改資料";
   return html`
     <details class="card" open>
-      <summary>批量修改資料，一次儲存</summary>
+      <summary>${title}，一次儲存</summary>
       <form data-action="bulkSaveMasters">
-        <p class="muted">這裡可以一次補齊供應商、食材、調味料和可用分店。全部改完後按最下面的「全部儲存」。</p>
-        <h2>供應商</h2>
-        ${suppliers.map(item => html`
+        <p class="muted">只會顯示你剛剛選的修改項目。全部改完後按最下面的「全部儲存」。</p>
+        ${mode === "suppliers" ? html`<h2>供應商資料</h2>
+          ${suppliers.map(item => html`
           <div class="bulk-item">
             <input type="hidden" name="supplierIds" value="${item.id}">
             <input type="hidden" name="supplierBranchIds" value="${item.branchId || ""}">
@@ -430,51 +454,120 @@ function bulkMastersEditor(suppliers, ingredients, seasonings, branches) {
             <label>統編<input name="supplierTaxIds" value="${escapeHtml(item.taxId || "")}"></label>
             <label>電話<input name="supplierPhones" value="${escapeHtml(item.phone || "")}"></label>
             <label>地址<input name="supplierAddresses" value="${escapeHtml(item.address || "")}"></label>
-            ${bulkScopeControls("supplier", item, branches)}
+            ${bulkHiddenScopeInputs("supplier", item)}
           </div>`).join("") || `<p class="muted">沒有供應商</p>`}
-        <h2>食材</h2>
-        ${ingredients.map(item => html`
+        ` : ""}
+        ${mode === "ingredientSuppliers" ? html`<h2>食材供應商</h2>
+          ${ingredients.map(item => html`
           <div class="bulk-item">
             <input type="hidden" name="ingredientIds" value="${item.id}">
             <input type="hidden" name="ingredientBranchIds" value="${item.branchId || ""}">
-            <label>食材<input name="ingredientNames" value="${escapeHtml(item.ingredientName)}"></label>
-            <label>產品<input name="ingredientProductNames" value="${escapeHtml(item.productName || item.ingredientName)}"></label>
-            <label>產地<input name="ingredientOrigins" value="${escapeHtml(item.origin || "臺灣")}"></label>
+            <input type="hidden" name="ingredientNames" value="${escapeHtml(item.ingredientName)}">
+            <input type="hidden" name="ingredientProductNames" value="${escapeHtml(item.productName || item.ingredientName)}">
+            <input type="hidden" name="ingredientOrigins" value="${escapeHtml(item.origin || "臺灣")}">
+            ${bulkHiddenScopeInputs("ingredient", item)}
+            <b>${escapeHtml(item.ingredientName || "未命名食材")}</b>
             <label>供應商<select name="ingredientSupplierIds"><option value="">待補</option>${suppliers.map(s => `<option value="${s.id}" ${Number(item.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}</select></label>
-            ${bulkScopeControls("ingredient", item, branches)}
           </div>`).join("") || `<p class="muted">沒有食材</p>`}
-        <h2>調味料</h2>
-        ${seasonings.map(item => html`
+        ` : ""}
+        ${mode === "seasoningSuppliers" ? html`<h2>調味料供應商</h2>
+          ${seasonings.map(item => html`
           <div class="bulk-item">
             <input type="hidden" name="seasoningIds" value="${item.id}">
             <input type="hidden" name="seasoningBranchIds" value="${item.branchId || ""}">
-            <label>調味料<input name="seasoningNames" value="${escapeHtml(item.name)}"></label>
+            <input type="hidden" name="seasoningNames" value="${escapeHtml(item.name)}">
+            ${bulkHiddenScopeInputs("seasoning", item)}
+            <b>${escapeHtml(item.name || "未命名調味料")}</b>
             <label>供應商<select name="seasoningSupplierIds"><option value="">待補</option>${suppliers.map(s => `<option value="${s.id}" ${Number(item.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}</select></label>
-            ${bulkScopeControls("seasoning", item, branches)}
           </div>`).join("") || `<p class="muted">沒有調味料</p>`}
+        ` : ""}
+        ${mode === "scopes" ? html`<h2>供應商可用分店</h2>
+          ${suppliers.map(item => html`
+            <div class="bulk-item">
+              <input type="hidden" name="supplierIds" value="${item.id}">
+              <input type="hidden" name="supplierBranchIds" value="${item.branchId || ""}">
+              <input type="hidden" name="supplierNames" value="${escapeHtml(item.name)}">
+              <input type="hidden" name="supplierOwners" value="${escapeHtml(item.owner || "")}">
+              <input type="hidden" name="supplierTaxIds" value="${escapeHtml(item.taxId || "")}">
+              <input type="hidden" name="supplierPhones" value="${escapeHtml(item.phone || "")}">
+              <input type="hidden" name="supplierAddresses" value="${escapeHtml(item.address || "")}">
+              <b>${escapeHtml(item.name || "未命名供應商")}</b>
+              ${bulkScopeControls("supplier", item, branches)}
+            </div>`).join("") || `<p class="muted">沒有供應商</p>`}
+          <h2>食材可用分店</h2>
+          ${ingredients.map(item => html`
+            <div class="bulk-item">
+              <input type="hidden" name="ingredientIds" value="${item.id}">
+              <input type="hidden" name="ingredientBranchIds" value="${item.branchId || ""}">
+              <input type="hidden" name="ingredientNames" value="${escapeHtml(item.ingredientName)}">
+              <input type="hidden" name="ingredientProductNames" value="${escapeHtml(item.productName || item.ingredientName)}">
+              <input type="hidden" name="ingredientOrigins" value="${escapeHtml(item.origin || "臺灣")}">
+              <input type="hidden" name="ingredientSupplierIds" value="${item.supplierId || ""}">
+              <b>${escapeHtml(item.ingredientName || "未命名食材")}</b>
+              ${bulkScopeControls("ingredient", item, branches)}
+            </div>`).join("") || `<p class="muted">沒有食材</p>`}
+          <h2>調味料可用分店</h2>
+          ${seasonings.map(item => html`
+            <div class="bulk-item">
+              <input type="hidden" name="seasoningIds" value="${item.id}">
+              <input type="hidden" name="seasoningBranchIds" value="${item.branchId || ""}">
+              <input type="hidden" name="seasoningNames" value="${escapeHtml(item.name)}">
+              <input type="hidden" name="seasoningSupplierIds" value="${item.supplierId || ""}">
+              <b>${escapeHtml(item.name || "未命名調味料")}</b>
+              ${bulkScopeControls("seasoning", item, branches)}
+            </div>`).join("") || `<p class="muted">沒有調味料</p>`}
+        ` : ""}
         <button>全部儲存</button>
       </form>
     </details>`;
 }
 
-function bulkRecipesEditor(recipes, branches) {
+function bulkRecipeModeButtons() {
+  const modes = [
+    ["details", "修改菜色資料"],
+    ["scopes", "設定菜色分店"],
+    ["composition", "編輯菜色組成"]
+  ];
+  return html`
+    <h2>批量修改</h2>
+    <div class="card mode-grid">
+      ${modes.map(([mode, label]) => `<button type="button" class="${state.recipeBatchMode === mode ? "" : "secondary"}" data-recipe-batch-mode="${mode}">${label}</button>`).join("")}
+      ${state.recipeBatchMode ? `<button type="button" class="secondary" data-recipe-batch-mode="">收起批量修改</button>` : ""}
+    </div>`;
+}
+
+function bulkRecipesEditor(recipes, branches, mode) {
   if (!recipes.length) return "";
+  if (!["details", "scopes"].includes(mode)) return "";
+  const title = mode === "details" ? "修改菜色資料" : "設定菜色分店";
   return html`
     <details class="card" open>
-      <summary>批量修改菜色，一次儲存</summary>
+      <summary>${title}，一次儲存</summary>
       <form data-action="bulkSaveRecipes">
-        <p class="muted">菜色名稱、熱量、可用分店都可以在這裡一次改完。</p>
+        <p class="muted">只會顯示你剛剛選的修改項目。全部改完後按最下面的「全部儲存」。</p>
         ${recipes.map(item => html`
           <div class="bulk-item">
             <input type="hidden" name="recipeIds" value="${item.id}">
             <input type="hidden" name="recipeBranchIds" value="${item.branchId || ""}">
-            <label>菜色名稱<input name="recipeNames" value="${escapeHtml(item.name)}"></label>
-            <label>熱量<input name="recipeCalories" type="number" min="0" value="${Number(item.calories || 0)}"></label>
-            ${bulkScopeControls("recipe", item, branches)}
+            ${mode === "details" ? html`
+              ${bulkHiddenScopeInputs("recipe", item)}
+              <label>菜色名稱<input name="recipeNames" value="${escapeHtml(item.name)}"></label>
+              <label>熱量<input name="recipeCalories" type="number" min="0" value="${Number(item.calories || 0)}"></label>
+            ` : html`
+              <input type="hidden" name="recipeNames" value="${escapeHtml(item.name)}">
+              <input type="hidden" name="recipeCalories" value="${Number(item.calories || 0)}">
+              <b>${escapeHtml(item.name || "未命名菜色")}</b>
+              ${bulkScopeControls("recipe", item, branches)}
+            `}
           </div>`).join("")}
         <button>全部儲存</button>
       </form>
     </details>`;
+}
+
+function bulkHiddenScopeInputs(prefix, item) {
+  const ids = scopeIds(item);
+  return ids.map(id => `<input type="hidden" name="${prefix}_${item.id}_scopeBranchIds" value="${id}">`).join("");
 }
 
 function bulkScopeControls(prefix, item, branches) {
@@ -1696,6 +1789,16 @@ document.addEventListener("click", async event => {
   if (setBranch) {
     state.branchId = setBranch.dataset.setBranch;
     state.view = "masters";
+    await render();
+  }
+  const masterBatch = event.target.closest("[data-master-batch-mode]");
+  if (masterBatch) {
+    state.masterBatchMode = masterBatch.dataset.masterBatchMode;
+    await render();
+  }
+  const recipeBatch = event.target.closest("[data-recipe-batch-mode]");
+  if (recipeBatch) {
+    state.recipeBatchMode = recipeBatch.dataset.recipeBatchMode;
     await render();
   }
   const deleteButton = event.target.closest("[data-delete]");

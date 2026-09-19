@@ -30,6 +30,7 @@ button.danger{background:#9f1239}
 .danger-text{color:#9f1239;font-weight:700}
 .repair-panel summary{font-weight:800}
 .split-actions{display:grid;grid-template-columns:1fr;gap:8px}
+.mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .bulk-item{border-top:1px solid #eee;padding:12px 0;display:grid;gap:4px}
 .bulk-item:first-of-type{border-top:0}
 .bulk-scope{background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin-top:6px}
@@ -40,4 +41,4 @@ button.danger{background:#9f1239}
 .chip{border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin:0;background:#fafafa}
 .download-list{display:grid;gap:10px;margin-top:12px}
 .download-item{display:grid;gap:8px;padding:12px;border:1px solid #ead28a;border-radius:10px;background:#fff}
-@media(min-width:720px){.grid{grid-template-columns:1fr 1fr}.actions{grid-template-columns:1fr 1fr}}
+@media(min-width:720px){.grid{grid-template-columns:1fr 1fr}.actions{grid-template-columns:1fr 1fr}.mode-grid{grid-template-columns:repeat(4,1fr)}}
