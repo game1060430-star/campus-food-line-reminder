@@ -320,8 +320,6 @@ function renderExports(data) {
 }
 
 function renderRepairPanel(data, branchId, issues) {
-  const suppliers = branchId ? availableForBranch(data.suppliers, branchId) : availableForScope(data.suppliers);
-  const supplierOptions = suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.name || "未命名供應商")}</option>`).join("");
   const total = issues.branches.length + issues.suppliers.length + issues.ingredients.length + issues.seasonings.length;
   if (!total) return `<div class="notice ok"><b>待補資料：</b>目前沒有看到會擋下載的明顯缺漏。</div>`;
   return html`
@@ -330,54 +328,61 @@ function renderRepairPanel(data, branchId, issues) {
       <p class="muted">這裡列出轉檔或匯入後缺少的必填資料。補完後按一次儲存，再重新下載 Excel。</p>
       ${issues.branches.length ? `<div class="notice"><b>分店資料要先補：</b><ul class="warning-list">${issues.branches.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul><small>請到「分店管理」修改分店資料。</small></div>` : ""}
       <form data-action="repairMissingData">
-        ${issues.suppliers.length ? html`
-          <h2>供應商待補</h2>
-          ${issues.suppliers.map(item => html`
-            <div class="bulk-item">
-              <input type="hidden" name="repairSupplierIds" value="${item.supplier.id}">
-              <b>${escapeHtml(item.supplier.name || "未命名供應商")}</b>
-              <small class="danger-text">缺：${item.missing.map(escapeHtml).join("、")}</small>
-              <label>供應商名稱<input name="repairSupplierNames" value="${escapeHtml(item.supplier.name || "")}"></label>
-              <label>負責人<input name="repairSupplierOwners" value="${escapeHtml(item.supplier.owner || "")}"></label>
-              <label>統編<input name="repairSupplierTaxIds" value="${escapeHtml(item.supplier.taxId || "")}"></label>
-              <label>電話<input name="repairSupplierPhones" value="${escapeHtml(item.supplier.phone || "")}"></label>
-              <label>地址<input name="repairSupplierAddresses" value="${escapeHtml(item.supplier.address || "")}"></label>
-            </div>`).join("")}` : ""}
-        ${issues.ingredients.length ? html`
-          <h2>食材待補</h2>
-          ${issues.ingredients.map(item => html`
-            <div class="bulk-item">
-              <input type="hidden" name="repairIngredientIds" value="${item.ingredient.id}">
-              <b>${escapeHtml(item.ingredient.ingredientName || "未命名食材")}</b>
-              <small class="danger-text">缺：${item.missing.map(escapeHtml).join("、")}</small>
-              <label>食材名稱<input name="repairIngredientNames" value="${escapeHtml(item.ingredient.ingredientName || "")}"></label>
-              <label>產品名稱<input name="repairIngredientProductNames" value="${escapeHtml(item.ingredient.productName || item.ingredient.ingredientName || "")}"></label>
-              <label>原產地<input name="repairIngredientOrigins" value="${escapeHtml(item.ingredient.origin || "臺灣")}"></label>
-              <label>供應商
-                <select name="repairIngredientSupplierIds">
-                  <option value="">待補</option>
-                  ${suppliers.map(s => `<option value="${s.id}" ${Number(item.ingredient.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name || "未命名供應商")}</option>`).join("")}
-                </select>
-              </label>
-            </div>`).join("")}` : ""}
-        ${issues.seasonings.length ? html`
-          <h2>調味料待補</h2>
-          ${issues.seasonings.map(item => html`
-            <div class="bulk-item">
-              <input type="hidden" name="repairSeasoningIds" value="${item.seasoning.id}">
-              <b>${escapeHtml(item.seasoning.name || "未命名調味料")}</b>
-              <small class="danger-text">缺：${item.missing.map(escapeHtml).join("、")}</small>
-              <label>供應商
-                <select name="repairSeasoningSupplierIds">
-                  <option value="">待補</option>
-                  ${suppliers.map(s => `<option value="${s.id}" ${Number(item.seasoning.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name || "未命名供應商")}</option>`).join("")}
-                </select>
-              </label>
-            </div>`).join("")}` : ""}
+        ${renderRepairFields(data, branchId, issues)}
         <button>儲存待補資料</button>
       </form>
-      ${!supplierOptions ? `<p class="muted">尚未建立供應商時，請先到「資料建檔」新增供應商，再回來補食材供應商。</p>` : ""}
     </details>`;
+}
+
+function renderRepairFields(data, branchId, issues) {
+  const suppliers = branchId ? availableForBranch(data.suppliers, branchId) : availableForScope(data.suppliers);
+  const supplierOptions = suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.name || "未命名供應商")}</option>`).join("");
+  return html`
+    ${issues.suppliers.length ? html`
+      <h2>供應商待補</h2>
+      ${issues.suppliers.map(item => html`
+        <div class="bulk-item">
+          <input type="hidden" name="repairSupplierIds" value="${item.supplier.id}">
+          <b>${escapeHtml(item.supplier.name || "未命名供應商")}</b>
+          <small class="danger-text">缺：${item.missing.map(escapeHtml).join("、")}</small>
+          <label>供應商名稱<input name="repairSupplierNames" value="${escapeHtml(item.supplier.name || "")}"></label>
+          <label>負責人<input name="repairSupplierOwners" value="${escapeHtml(item.supplier.owner || "")}"></label>
+          <label>統編<input name="repairSupplierTaxIds" value="${escapeHtml(item.supplier.taxId || "")}"></label>
+          <label>電話<input name="repairSupplierPhones" value="${escapeHtml(item.supplier.phone || "")}"></label>
+          <label>地址<input name="repairSupplierAddresses" value="${escapeHtml(item.supplier.address || "")}"></label>
+        </div>`).join("")}` : ""}
+    ${issues.ingredients.length ? html`
+      <h2>食材待補</h2>
+      ${issues.ingredients.map(item => html`
+        <div class="bulk-item">
+          <input type="hidden" name="repairIngredientIds" value="${item.ingredient.id}">
+          <b>${escapeHtml(item.ingredient.ingredientName || "未命名食材")}</b>
+          <small class="danger-text">缺：${item.missing.map(escapeHtml).join("、")}</small>
+          <label>食材名稱<input name="repairIngredientNames" value="${escapeHtml(item.ingredient.ingredientName || "")}"></label>
+          <label>產品名稱<input name="repairIngredientProductNames" value="${escapeHtml(item.ingredient.productName || item.ingredient.ingredientName || "")}"></label>
+          <label>原產地<input name="repairIngredientOrigins" value="${escapeHtml(item.ingredient.origin || "臺灣")}"></label>
+          <label>供應商
+            <select name="repairIngredientSupplierIds">
+              <option value="">待補</option>
+              ${suppliers.map(s => `<option value="${s.id}" ${Number(item.ingredient.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name || "未命名供應商")}</option>`).join("")}
+            </select>
+          </label>
+        </div>`).join("")}` : ""}
+    ${issues.seasonings.length ? html`
+      <h2>調味料待補</h2>
+      ${issues.seasonings.map(item => html`
+        <div class="bulk-item">
+          <input type="hidden" name="repairSeasoningIds" value="${item.seasoning.id}">
+          <b>${escapeHtml(item.seasoning.name || "未命名調味料")}</b>
+          <small class="danger-text">缺：${item.missing.map(escapeHtml).join("、")}</small>
+          <label>供應商
+            <select name="repairSeasoningSupplierIds">
+              <option value="">待補</option>
+              ${suppliers.map(s => `<option value="${s.id}" ${Number(item.seasoning.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name || "未命名供應商")}</option>`).join("")}
+            </select>
+          </label>
+        </div>`).join("")}` : ""}
+    ${!supplierOptions ? `<p class="muted">尚未建立供應商時，請先到「資料建檔」新增供應商，再回來補食材供應商。</p>` : ""}`;
 }
 
 function renderBackup(data) {
@@ -765,7 +770,7 @@ async function bulkSaveMasters(form) {
 
 async function repairMissingData(form) {
   const data = await dataBundle();
-  const formData = new FormData(form);
+  const formData = formDataFromElement(form);
   const suppliersById = new Map(data.suppliers.map(item => [Number(item.id), item]));
   const supplierRows = arraysFromForm(formData, ["repairSupplierIds", "repairSupplierNames", "repairSupplierOwners", "repairSupplierTaxIds", "repairSupplierPhones", "repairSupplierAddresses"]);
   for (const row of supplierRows) {
@@ -808,6 +813,17 @@ async function repairMissingData(form) {
       supplierId: row.repairSeasoningSupplierIds ? Number(row.repairSeasoningSupplierIds) : null
     });
   }
+}
+
+function formDataFromElement(element) {
+  if (element instanceof HTMLFormElement) return new FormData(element);
+  const formData = new FormData();
+  for (const field of element.querySelectorAll("input, select, textarea")) {
+    if (!field.name || field.disabled) continue;
+    if ((field.type === "checkbox" || field.type === "radio") && !field.checked) continue;
+    formData.append(field.name, field.value);
+  }
+  return formData;
 }
 
 async function bulkSaveRecipes(form) {
@@ -1168,7 +1184,16 @@ async function downloadOfficial(form) {
   const endDate = formData.get("endDate");
   const problems = validateDownload(data, branch, fileTypes, recipeIds, startDate, endDate);
   if (problems.length) {
-    result.innerHTML = `<div class="notice"><b>先補完這些資料：</b><ul class="warning-list">${problems.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`;
+    const repairIssues = collectRepairIssues(data, branchId);
+    result.innerHTML = html`
+      <div class="notice"><b>先補完這些資料：</b><ul class="warning-list">${problems.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>
+      <div class="card repair-panel" data-download-repair>
+        <h2>直接在這裡補資料</h2>
+        <p class="muted">補完按儲存，系統會重新整理。再按一次「產生並下載」就可以繼續。</p>
+        ${repairIssues.branches.length ? `<div class="notice"><b>分店資料要先補：</b><ul class="warning-list">${repairIssues.branches.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul><small>請到「分店管理」修改分店資料。</small></div>` : ""}
+        ${renderRepairFields(data, branchId, repairIssues)}
+        <button type="button" data-action-click="saveDownloadRepair">儲存待補資料</button>
+      </div>`;
     return;
   }
   const officialRows = buildOfficialRows(data, branch, recipeIds, startDate, endDate);
@@ -1558,6 +1583,13 @@ document.addEventListener("click", async event => {
   }
   const action = event.target.closest("[data-action-click]");
   if (action?.dataset.actionClick === "exportBackup") await exportBackup();
+  if (action?.dataset.actionClick === "saveDownloadRepair") {
+    const container = action.closest("[data-download-repair]");
+    if (!container) return;
+    await repairMissingData(container);
+    alert("待補資料已儲存，請再按一次產生並下載。");
+    await render();
+  }
   const lineUpload = event.target.closest("[data-line-upload-text]");
   if (lineUpload) {
     const target = document.getElementById("lineUploadResult");
