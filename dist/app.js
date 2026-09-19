@@ -306,6 +306,10 @@ function renderExports(data) {
       <details class="manual-ingredients">
         <summary>選擇這次有進貨的食材</summary>
         <p class="muted">選「手動勾選進貨食材」時，食材 Excel 會用這裡勾選的食材，不需要菜色已經設定食材組成。</p>
+        <div class="split-actions">
+          <button type="button" class="secondary" data-check-all="manualIngredientIds">全選食材</button>
+          <button type="button" class="secondary" data-uncheck-all="manualIngredientIds">清除勾選</button>
+        </div>
         <div class="choice-grid">
           ${ingredients.map(item => `<label class="check chip"><input type="checkbox" name="manualIngredientIds" value="${item.id}"><span>${escapeHtml(item.ingredientName)}／${supplierName(data.suppliers, item.supplierId)}</span></label>`).join("") || `<p class="muted">這個分店還沒有食材</p>`}
         </div>
@@ -1825,6 +1829,18 @@ document.addEventListener("click", async event => {
   if (recipeBatch) {
     state.recipeBatchMode = recipeBatch.dataset.recipeBatchMode;
     await render();
+  }
+  const checkAll = event.target.closest("[data-check-all]");
+  if (checkAll) {
+    document.querySelectorAll(`input[name="${checkAll.dataset.checkAll}"]`).forEach(input => {
+      input.checked = true;
+    });
+  }
+  const uncheckAll = event.target.closest("[data-uncheck-all]");
+  if (uncheckAll) {
+    document.querySelectorAll(`input[name="${uncheckAll.dataset.uncheckAll}"]`).forEach(input => {
+      input.checked = false;
+    });
   }
   const deleteButton = event.target.closest("[data-delete]");
   if (deleteButton && confirm(deleteConfirmText(deleteButton.dataset.delete))) {
