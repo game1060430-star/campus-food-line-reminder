@@ -36,6 +36,7 @@ const WEEKDAYS = [
 let db;
 let state = { view: "home", branchId: "" };
 let backupDownloadUrl = "";
+const generatedDownloads = new Map();
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -1198,14 +1199,19 @@ async function downloadOfficial(form) {
       </div>`;
     return;
   }
+  clearGeneratedDownloads();
   const officialRows = buildOfficialRows(data, branch, recipeIds, startDate, endDate);
+  const generatedFiles = [];
   for (const type of fileTypes) {
-    await writeOfficialWorkbook(type, officialRows[type], `${branch.name}_${OFFICIAL_TEMPLATES[type].name}_${startDate}_到_${endDate}.xlsx`);
+    const file = await writeOfficialWorkbook(type, officialRows[type], `${branch.name}_${OFFICIAL_TEMPLATES[type].name}_${startDate}_到_${endDate}.xlsx`);
+    generatedFiles.push(file);
+    if (!isStandaloneApp()) saveBlob(file.blob, file.filename);
   }
   const lineText = `已上傳 ${branch.name} ${startDate} ${endDate}`;
   result.innerHTML = html`
     <div class="notice">
-      已產生 ${fileTypes.length} 個 Excel。若手機瀏覽器擋住多檔下載，請再按一次或改成一次只勾一種檔案。
+      已產生 ${fileTypes.length} 個 Excel。${isStandaloneApp() ? "你現在是主畫面 App 模式，iPhone 可能會擋自動下載；請用下面每個檔案的按鈕儲存。" : "若手機瀏覽器擋住多檔下載，也可以用下面的單檔按鈕。"}
+      ${renderGeneratedDownloads(generatedFiles)}
       <br><br><button type="button" data-line-upload-text="${escapeHtml(lineText)}">我已上傳官方平台</button>
       <div id="lineUploadResult"></div>
     </div>`;
@@ -1506,7 +1512,11 @@ async function writeOfficialWorkbook(type, rows, filename) {
   zip.file("xl/worksheets/sheet1.xml", sheetXml);
   zip.file("xl/sharedStrings.xml", shared.finish());
   const blob = await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-  saveBlob(blob, filename);
+  const id = newDownloadId();
+  const url = URL.createObjectURL(blob);
+  const file = { id, blob, filename, url };
+  generatedDownloads.set(id, file);
+  return file;
 }
 
 function appendSharedStrings(sharedXml) {
@@ -1583,6 +1593,43 @@ function saveBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function renderGeneratedDownloads(files) {
+  if (!files.length) return "";
+  return html`
+    <div class="download-list">
+      ${files.map(file => html`
+        <div class="download-item">
+          <b>${escapeHtml(file.filename)}</b>
+          <a class="btn secondary" href="${file.url}" download="${escapeHtml(file.filename)}">單獨下載</a>
+          <button type="button" data-share-download="${file.id}">分享／存到檔案</button>
+        </div>`).join("")}
+    </div>`;
+}
+
+function clearGeneratedDownloads() {
+  for (const file of generatedDownloads.values()) URL.revokeObjectURL(file.url);
+  generatedDownloads.clear();
+}
+
+function newDownloadId() {
+  return window.crypto?.randomUUID?.() || `download-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function isStandaloneApp() {
+  return window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true;
+}
+
+async function shareGeneratedDownload(id) {
+  const item = generatedDownloads.get(id);
+  if (!item) return alert("檔案已過期，請重新按一次產生並下載。");
+  const file = new File([item.blob], item.filename, { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+    await navigator.share({ files: [file], title: item.filename }).catch(() => {});
+    return;
+  }
+  saveBlob(item.blob, item.filename);
+}
+
 document.addEventListener("submit", handleSubmit);
 document.addEventListener("change", async event => {
   if (event.target.id === "branchScope") {
@@ -1644,6 +1691,8 @@ document.addEventListener("click", async event => {
     const target = document.getElementById("lineUploadResult");
     if (target) target.innerHTML = lineCopyBox("lineUploadText", lineUpload.dataset.lineUploadText, "把下面這段傳給 LINE 機器人，它就會記錄這段日期已上傳。");
   }
+  const shareDownload = event.target.closest("[data-share-download]");
+  if (shareDownload) await shareGeneratedDownload(shareDownload.dataset.shareDownload);
   const copy = event.target.closest("[data-copy-target]");
   if (copy) {
     const target = document.getElementById(copy.dataset.copyTarget);
