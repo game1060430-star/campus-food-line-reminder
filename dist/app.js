@@ -278,6 +278,7 @@ function renderExports(data) {
   const activeBranch = data.branches.find(branch => String(branch.id) === String(state.branchId));
   const branchId = activeBranch?.id || data.branches[0]?.id || "";
   const recipes = branchId ? availableForBranch(data.recipes, branchId) : [];
+  const ingredients = branchId ? availableForBranch(data.ingredients, branchId) : [];
   const [startDate, endDate] = defaultExportDates();
   const repairIssues = collectRepairIssues(data, branchId);
   return html`
@@ -299,6 +300,16 @@ function renderExports(data) {
       <label class="check"><input type="checkbox" name="fileTypes" value="suppliers"><span>供應商 Excel</span></label>
       <h2>菜色</h2>
       ${recipes.map(recipe => `<label class="check"><input type="checkbox" name="recipeIds" value="${recipe.id}" checked><span>${escapeHtml(recipe.name)}</span></label>`).join("") || `<p class="muted">這個分店還沒有菜色</p>`}
+      <h2>食材 Excel 來源</h2>
+      <label class="check"><input type="radio" name="ingredientSource" value="recipes" checked><span>依菜色組成自動帶入</span></label>
+      <label class="check"><input type="radio" name="ingredientSource" value="manual"><span>手動勾選進貨食材</span></label>
+      <details class="manual-ingredients">
+        <summary>選擇這次有進貨的食材</summary>
+        <p class="muted">選「手動勾選進貨食材」時，食材 Excel 會用這裡勾選的食材，不需要菜色已經設定食材組成。</p>
+        <div class="choice-grid">
+          ${ingredients.map(item => `<label class="check chip"><input type="checkbox" name="manualIngredientIds" value="${item.id}"><span>${escapeHtml(item.ingredientName)}／${supplierName(data.suppliers, item.supplierId)}</span></label>`).join("") || `<p class="muted">這個分店還沒有食材</p>`}
+        </div>
+      </details>
       <button>產生並下載</button>
       <div id="downloadResult"></div>
     </form>
@@ -1303,11 +1314,14 @@ async function downloadOfficial(form) {
   const branch = data.branches.find(item => Number(item.id) === branchId);
   const fileTypes = formData.getAll("fileTypes");
   const recipeIds = new Set(formData.getAll("recipeIds").map(Number));
+  const ingredientSource = formData.get("ingredientSource") || "recipes";
+  const manualIngredientIds = new Set(formData.getAll("manualIngredientIds").map(Number).filter(Boolean));
   const startDate = formData.get("startDate");
   const endDate = formData.get("endDate");
-  const problems = validateDownload(data, branch, fileTypes, recipeIds, startDate, endDate);
+  const options = { ingredientSource, manualIngredientIds };
+  const problems = validateDownload(data, branch, fileTypes, recipeIds, startDate, endDate, options);
   if (problems.length) {
-    const repairIssues = collectDownloadRepairIssues(data, branch, fileTypes, recipeIds);
+    const repairIssues = collectDownloadRepairIssues(data, branch, fileTypes, recipeIds, options);
     result.innerHTML = html`
       <div class="notice"><b>先補完這些資料：</b><ul class="warning-list">${problems.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>
       <div class="card repair-panel" data-download-repair>
@@ -1320,7 +1334,7 @@ async function downloadOfficial(form) {
     return;
   }
   clearGeneratedDownloads();
-  const officialRows = buildOfficialRows(data, branch, recipeIds, startDate, endDate);
+  const officialRows = buildOfficialRows(data, branch, recipeIds, startDate, endDate, options);
   const generatedFiles = [];
   for (const type of fileTypes) {
     const file = await writeOfficialWorkbook(type, officialRows[type], `${branch.name}_${OFFICIAL_TEMPLATES[type].name}_${startDate}_到_${endDate}.xlsx`);
@@ -1399,7 +1413,7 @@ function collectRepairIssues(data, branchId) {
   return issues;
 }
 
-function collectDownloadRepairIssues(data, branch, fileTypes, recipeIds) {
+function collectDownloadRepairIssues(data, branch, fileTypes, recipeIds, options = {}) {
   const branchId = branch?.id;
   const recipes = availableForBranch(data.recipes, branchId).filter(recipe => recipeIds.has(Number(recipe.id)));
   const supplierById = new Map(data.suppliers.map(item => [Number(item.id), item]));
@@ -1411,7 +1425,7 @@ function collectDownloadRepairIssues(data, branch, fileTypes, recipeIds) {
   }
 
   if (fileTypes.includes("ingredients")) {
-    for (const id of usedIngredientIds(data, recipes)) {
+    for (const id of selectedIngredientIds(data, recipes, options)) {
       const ingredient = data.ingredients.find(item => Number(item.id) === Number(id));
       if (!ingredient) continue;
       const missing = [];
@@ -1437,7 +1451,7 @@ function collectDownloadRepairIssues(data, branch, fileTypes, recipeIds) {
 
   const suppliersToCheck = fileTypes.includes("suppliers")
     ? availableForBranch(data.suppliers, branchId)
-    : usedSuppliers(data, recipes, fileTypes);
+    : usedSuppliers(data, recipes, fileTypes, options);
   for (const supplier of suppliersToCheck) {
     const missing = supplierMissingFields(supplier);
     if (missing.length) issues.suppliers.push({ supplier, missing });
@@ -1457,18 +1471,21 @@ function supplierMissingFields(supplier) {
   return fields.filter(([key]) => !cleanCell(supplier[key])).map(([, label]) => label);
 }
 
-function validateDownload(data, branch, fileTypes, recipeIds, startDate, endDate) {
+function validateDownload(data, branch, fileTypes, recipeIds, startDate, endDate, options = {}) {
   const problems = [];
   if (!branch) problems.push("請先選擇分店。");
   if (!startDate || !endDate || startDate > endDate) problems.push("日期區間不正確。");
   if (!fileTypes.length) problems.push("請至少勾選一種 Excel。");
   const recipes = availableForBranch(data.recipes, branch?.id).filter(recipe => recipeIds.has(Number(recipe.id)));
-  if ((fileTypes.includes("menus") || fileTypes.includes("ingredients")) && !recipes.length) problems.push("請至少選一個菜色。");
+  if (fileTypes.includes("menus") && !recipes.length) problems.push("產生菜單 Excel 請至少選一個菜色。");
+  if (fileTypes.includes("seasonings") && !recipes.length) problems.push("產生調味料 Excel 請至少選一個菜色。");
+  if (fileTypes.includes("ingredients") && options.ingredientSource !== "manual" && !recipes.length) problems.push("依菜色組成產生食材 Excel 時，請至少選一個菜色。");
+  if (fileTypes.includes("ingredients") && options.ingredientSource === "manual" && !options.manualIngredientIds?.size) problems.push("手動產生食材 Excel 時，請至少勾選一個進貨食材。");
   for (const field of ["schoolName", "serviceLocation", "restaurantName"]) {
     if (branch && !branch[field]) problems.push(`分店「${branch.name}」缺少${fieldLabel(field)}。`);
   }
   if (fileTypes.includes("ingredients")) {
-    const ingredientIds = usedIngredientIds(data, recipes);
+    const ingredientIds = selectedIngredientIds(data, recipes, options);
     for (const id of ingredientIds) {
       const ingredient = data.ingredients.find(item => Number(item.id) === Number(id));
       const supplier = data.suppliers.find(item => Number(item.id) === Number(ingredient?.supplierId));
@@ -1484,7 +1501,7 @@ function validateDownload(data, branch, fileTypes, recipeIds, startDate, endDate
   }
   const suppliersToCheck = fileTypes.includes("suppliers")
     ? availableForBranch(data.suppliers, branch?.id)
-    : usedSuppliers(data, recipes, fileTypes);
+    : usedSuppliers(data, recipes, fileTypes, options);
   if (fileTypes.includes("suppliers") || fileTypes.includes("ingredients") || fileTypes.includes("seasonings")) {
     for (const supplier of suppliersToCheck) {
       if (!supplier.name || !supplier.owner || !supplier.taxId || !supplier.phone || !supplier.address) problems.push(`供應商「${supplier.name || "未命名"}」負責人、統編、電話、地址都要填。`);
@@ -1497,7 +1514,7 @@ function fieldLabel(field) {
   return { schoolName: "學校名稱", serviceLocation: "供餐地點", restaurantName: "餐廳名稱" }[field] || field;
 }
 
-function buildOfficialRows(data, branch, recipeIds, startDate, endDate) {
+function buildOfficialRows(data, branch, recipeIds, startDate, endDate, options = {}) {
   const dates = serviceDates(startDate, endDate);
   const recipes = availableForBranch(data.recipes, branch.id).filter(recipe => recipeIds.has(Number(recipe.id)));
   const seasoningIds = usedSeasoningIds(data, recipes);
@@ -1511,15 +1528,18 @@ function buildOfficialRows(data, branch, recipeIds, startDate, endDate) {
         .map(link => data.ingredients.find(item => Number(item.id) === Number(link.ingredientId))?.ingredientName)
         .filter(Boolean);
       rows.menus.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, date, "", recipe.name, recipeIngredients.join("、"), Number(recipe.calories || 0)]);
-      for (const link of data.recipeIngredients.filter(item => Number(item.recipeId) === Number(recipe.id))) {
-        const ingredient = data.ingredients.find(item => Number(item.id) === Number(link.ingredientId));
-        const supplier = data.suppliers.find(item => Number(item.id) === Number(ingredient?.supplierId));
-        const purchaseDate = purchaseDateFor(date, supplier);
-        const key = [purchaseDate, ingredient?.id || "", supplier?.id || ""].join("|");
-        if (ingredientRowKeys.has(key)) continue;
-        ingredientRowKeys.add(key);
-        rows.ingredients.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, date, purchaseDate, ingredient?.productName || "", ingredient?.ingredientName || "", ingredient?.origin || "", supplier?.name || ""]);
-      }
+    }
+  }
+  const ingredientIds = selectedIngredientIds(data, recipes, options);
+  for (const date of dates) {
+    for (const id of ingredientIds) {
+      const ingredient = data.ingredients.find(item => Number(item.id) === Number(id));
+      const supplier = data.suppliers.find(item => Number(item.id) === Number(ingredient?.supplierId));
+      const purchaseDate = purchaseDateFor(date, supplier);
+      const key = [purchaseDate, ingredient?.id || "", supplier?.id || ""].join("|");
+      if (ingredientRowKeys.has(key)) continue;
+      ingredientRowKeys.add(key);
+      rows.ingredients.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, date, purchaseDate, ingredient?.productName || "", ingredient?.ingredientName || "", ingredient?.origin || "", supplier?.name || ""]);
     }
   }
   for (const id of seasoningIds) {
@@ -1536,6 +1556,11 @@ function usedIngredientIds(data, recipes) {
   return [...new Set(data.recipeIngredients.filter(item => recipeIds.has(Number(item.recipeId))).map(item => Number(item.ingredientId)))];
 }
 
+function selectedIngredientIds(data, recipes, options = {}) {
+  if (options.ingredientSource === "manual") return [...new Set([...(options.manualIngredientIds || [])].map(Number).filter(Boolean))];
+  return usedIngredientIds(data, recipes);
+}
+
 function usedSeasoningIds(data, recipes) {
   const recipeIds = new Set(recipes.map(recipe => Number(recipe.id)));
   return [...new Set(data.recipeSeasonings.filter(item => recipeIds.has(Number(item.recipeId))).map(item => Number(item.seasoningId)))];
@@ -1546,10 +1571,10 @@ function usedSeasonings(data, recipes) {
   return data.seasonings.filter(item => ids.has(Number(item.id)));
 }
 
-function usedSuppliers(data, recipes, fileTypes) {
+function usedSuppliers(data, recipes, fileTypes, options = {}) {
   const ids = new Set();
   if (fileTypes.includes("ingredients")) {
-    const ingredientIds = new Set(usedIngredientIds(data, recipes).map(Number));
+    const ingredientIds = new Set(selectedIngredientIds(data, recipes, options).map(Number));
     for (const ingredient of data.ingredients.filter(item => ingredientIds.has(Number(item.id)))) {
       if (ingredient.supplierId) ids.add(Number(ingredient.supplierId));
     }
