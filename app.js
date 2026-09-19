@@ -275,9 +275,11 @@ function renderExports(data) {
   const branchId = activeBranch?.id || data.branches[0]?.id || "";
   const recipes = branchId ? availableForBranch(data.recipes, branchId) : [];
   const [startDate, endDate] = defaultExportDates();
+  const repairIssues = collectRepairIssues(data, branchId);
   return html`
     <h1>下載官方 Excel</h1>
     <div class="notice"><b>這裡只產生 Excel，不連官方網站。</b><br>下載後你再用手機或電腦手動上傳。檔案會各自下載，不會包成 ZIP。</div>
+    ${renderRepairPanel(data, branchId, repairIssues)}
     <form class="card" data-action="downloadOfficial">
       <label>分店
         <select name="branchId" required>
@@ -315,6 +317,67 @@ function renderExports(data) {
       <button>產生 LINE 文字</button>
       <div id="lineCommandResult"></div>
     </form>`;
+}
+
+function renderRepairPanel(data, branchId, issues) {
+  const suppliers = branchId ? availableForBranch(data.suppliers, branchId) : availableForScope(data.suppliers);
+  const supplierOptions = suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.name || "未命名供應商")}</option>`).join("");
+  const total = issues.branches.length + issues.suppliers.length + issues.ingredients.length + issues.seasonings.length;
+  if (!total) return `<div class="notice ok"><b>待補資料：</b>目前沒有看到會擋下載的明顯缺漏。</div>`;
+  return html`
+    <details class="card repair-panel" open>
+      <summary>待補資料 ${total} 筆</summary>
+      <p class="muted">這裡列出轉檔或匯入後缺少的必填資料。補完後按一次儲存，再重新下載 Excel。</p>
+      ${issues.branches.length ? `<div class="notice"><b>分店資料要先補：</b><ul class="warning-list">${issues.branches.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul><small>請到「分店管理」修改分店資料。</small></div>` : ""}
+      <form data-action="repairMissingData">
+        ${issues.suppliers.length ? html`
+          <h2>供應商待補</h2>
+          ${issues.suppliers.map(item => html`
+            <div class="bulk-item">
+              <input type="hidden" name="repairSupplierIds" value="${item.supplier.id}">
+              <b>${escapeHtml(item.supplier.name || "未命名供應商")}</b>
+              <small class="danger-text">缺：${item.missing.map(escapeHtml).join("、")}</small>
+              <label>供應商名稱<input name="repairSupplierNames" value="${escapeHtml(item.supplier.name || "")}"></label>
+              <label>負責人<input name="repairSupplierOwners" value="${escapeHtml(item.supplier.owner || "")}"></label>
+              <label>統編<input name="repairSupplierTaxIds" value="${escapeHtml(item.supplier.taxId || "")}"></label>
+              <label>電話<input name="repairSupplierPhones" value="${escapeHtml(item.supplier.phone || "")}"></label>
+              <label>地址<input name="repairSupplierAddresses" value="${escapeHtml(item.supplier.address || "")}"></label>
+            </div>`).join("")}` : ""}
+        ${issues.ingredients.length ? html`
+          <h2>食材待補</h2>
+          ${issues.ingredients.map(item => html`
+            <div class="bulk-item">
+              <input type="hidden" name="repairIngredientIds" value="${item.ingredient.id}">
+              <b>${escapeHtml(item.ingredient.ingredientName || "未命名食材")}</b>
+              <small class="danger-text">缺：${item.missing.map(escapeHtml).join("、")}</small>
+              <label>食材名稱<input name="repairIngredientNames" value="${escapeHtml(item.ingredient.ingredientName || "")}"></label>
+              <label>產品名稱<input name="repairIngredientProductNames" value="${escapeHtml(item.ingredient.productName || item.ingredient.ingredientName || "")}"></label>
+              <label>原產地<input name="repairIngredientOrigins" value="${escapeHtml(item.ingredient.origin || "臺灣")}"></label>
+              <label>供應商
+                <select name="repairIngredientSupplierIds">
+                  <option value="">待補</option>
+                  ${suppliers.map(s => `<option value="${s.id}" ${Number(item.ingredient.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name || "未命名供應商")}</option>`).join("")}
+                </select>
+              </label>
+            </div>`).join("")}` : ""}
+        ${issues.seasonings.length ? html`
+          <h2>調味料待補</h2>
+          ${issues.seasonings.map(item => html`
+            <div class="bulk-item">
+              <input type="hidden" name="repairSeasoningIds" value="${item.seasoning.id}">
+              <b>${escapeHtml(item.seasoning.name || "未命名調味料")}</b>
+              <small class="danger-text">缺：${item.missing.map(escapeHtml).join("、")}</small>
+              <label>供應商
+                <select name="repairSeasoningSupplierIds">
+                  <option value="">待補</option>
+                  ${suppliers.map(s => `<option value="${s.id}" ${Number(item.seasoning.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name || "未命名供應商")}</option>`).join("")}
+                </select>
+              </label>
+            </div>`).join("")}` : ""}
+        <button>儲存待補資料</button>
+      </form>
+      ${!supplierOptions ? `<p class="muted">尚未建立供應商時，請先到「資料建檔」新增供應商，再回來補食材供應商。</p>` : ""}
+    </details>`;
 }
 
 function renderBackup(data) {
@@ -366,6 +429,7 @@ function bulkMastersEditor(suppliers, ingredients, seasonings) {
             <label>食材<input name="ingredientNames" value="${escapeHtml(item.ingredientName)}"></label>
             <label>產品<input name="ingredientProductNames" value="${escapeHtml(item.productName || item.ingredientName)}"></label>
             <label>產地<input name="ingredientOrigins" value="${escapeHtml(item.origin || "臺灣")}"></label>
+            <label>供應商<select name="ingredientSupplierIds"><option value="">待補</option>${suppliers.map(s => `<option value="${s.id}" ${Number(item.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}</select></label>
           </div>`).join("") || `<p class="muted">沒有食材</p>`}
         <h2>調味料</h2>
         ${seasonings.map(item => html`
@@ -635,6 +699,10 @@ async function handleSubmit(event) {
     await bulkSaveMasters(form);
     alert("資料已全部儲存");
   }
+  if (action === "repairMissingData") {
+    await repairMissingData(form);
+    alert("待補資料已儲存");
+  }
   if (action === "bulkSaveRecipes") {
     await bulkSaveRecipes(form);
     alert("菜色已全部儲存");
@@ -667,7 +735,7 @@ async function bulkSaveMasters(form) {
     });
   }
   const ingredientsById = new Map(data.ingredients.map(item => [Number(item.id), item]));
-  const ingredients = arraysFromForm(formData, ["ingredientIds", "ingredientBranchIds", "ingredientNames", "ingredientProductNames", "ingredientOrigins"]);
+  const ingredients = arraysFromForm(formData, ["ingredientIds", "ingredientBranchIds", "ingredientNames", "ingredientProductNames", "ingredientOrigins", "ingredientSupplierIds"]);
   for (const row of ingredients) {
     if (!row.ingredientIds || !row.ingredientNames) continue;
     const old = ingredientsById.get(Number(row.ingredientIds)) || {};
@@ -677,7 +745,8 @@ async function bulkSaveMasters(form) {
       branchId: optionalNumber(row.ingredientBranchIds),
       ingredientName: row.ingredientNames,
       productName: row.ingredientProductNames || row.ingredientNames,
-      origin: row.ingredientOrigins || "臺灣"
+      origin: row.ingredientOrigins || "臺灣",
+      supplierId: row.ingredientSupplierIds ? Number(row.ingredientSupplierIds) : null
     });
   }
   const seasoningsById = new Map(data.seasonings.map(item => [Number(item.id), item]));
@@ -690,6 +759,53 @@ async function bulkSaveMasters(form) {
       id: Number(row.seasoningIds),
       branchId: optionalNumber(row.seasoningBranchIds),
       name: row.seasoningNames
+    });
+  }
+}
+
+async function repairMissingData(form) {
+  const data = await dataBundle();
+  const formData = new FormData(form);
+  const suppliersById = new Map(data.suppliers.map(item => [Number(item.id), item]));
+  const supplierRows = arraysFromForm(formData, ["repairSupplierIds", "repairSupplierNames", "repairSupplierOwners", "repairSupplierTaxIds", "repairSupplierPhones", "repairSupplierAddresses"]);
+  for (const row of supplierRows) {
+    if (!row.repairSupplierIds) continue;
+    const old = suppliersById.get(Number(row.repairSupplierIds));
+    if (!old) continue;
+    await put("suppliers", {
+      ...old,
+      name: row.repairSupplierNames || old.name || "",
+      owner: row.repairSupplierOwners || "",
+      taxId: row.repairSupplierTaxIds || "",
+      phone: row.repairSupplierPhones || "",
+      address: row.repairSupplierAddresses || ""
+    });
+  }
+
+  const ingredientsById = new Map(data.ingredients.map(item => [Number(item.id), item]));
+  const ingredientRows = arraysFromForm(formData, ["repairIngredientIds", "repairIngredientNames", "repairIngredientProductNames", "repairIngredientOrigins", "repairIngredientSupplierIds"]);
+  for (const row of ingredientRows) {
+    if (!row.repairIngredientIds) continue;
+    const old = ingredientsById.get(Number(row.repairIngredientIds));
+    if (!old) continue;
+    await put("ingredients", {
+      ...old,
+      ingredientName: row.repairIngredientNames || old.ingredientName || "",
+      productName: row.repairIngredientProductNames || row.repairIngredientNames || old.productName || old.ingredientName || "",
+      origin: row.repairIngredientOrigins || "臺灣",
+      supplierId: row.repairIngredientSupplierIds ? Number(row.repairIngredientSupplierIds) : null
+    });
+  }
+
+  const seasoningsById = new Map(data.seasonings.map(item => [Number(item.id), item]));
+  const seasoningRows = arraysFromForm(formData, ["repairSeasoningIds", "repairSeasoningSupplierIds"]);
+  for (const row of seasoningRows) {
+    if (!row.repairSeasoningIds) continue;
+    const old = seasoningsById.get(Number(row.repairSeasoningIds));
+    if (!old) continue;
+    await put("seasonings", {
+      ...old,
+      supplierId: row.repairSeasoningSupplierIds ? Number(row.repairSeasoningSupplierIds) : null
     });
   }
 }
@@ -1089,6 +1205,56 @@ function lineCopyBox(id, text, helpText) {
       <textarea id="${id}" readonly rows="2">${escapeHtml(text)}</textarea>
       <button type="button" data-copy-target="${id}" class="secondary">複製 LINE 文字</button>
     </div>`;
+}
+
+function collectRepairIssues(data, branchId) {
+  const branch = data.branches.find(item => Number(item.id) === Number(branchId));
+  const supplierById = new Map(data.suppliers.map(item => [Number(item.id), item]));
+  const suppliers = branchId ? availableForBranch(data.suppliers, branchId) : availableForScope(data.suppliers);
+  const ingredients = branchId ? availableForBranch(data.ingredients, branchId) : availableForScope(data.ingredients);
+  const seasonings = branchId ? availableForBranch(data.seasonings, branchId) : availableForScope(data.seasonings);
+  const issues = { branches: [], suppliers: [], ingredients: [], seasonings: [] };
+
+  if (!branch) issues.branches.push("尚未選擇分店。");
+  for (const field of ["schoolName", "serviceLocation", "restaurantName"]) {
+    if (branch && !cleanCell(branch[field])) issues.branches.push(`分店「${branch.name}」缺少${fieldLabel(field)}。`);
+  }
+
+  for (const supplier of suppliers) {
+    const missing = supplierMissingFields(supplier);
+    if (missing.length) issues.suppliers.push({ supplier, missing });
+  }
+
+  for (const ingredient of ingredients) {
+    const missing = [];
+    if (!cleanCell(ingredient.ingredientName)) missing.push("食材名稱");
+    if (!cleanCell(ingredient.productName)) missing.push("產品名稱");
+    if (!cleanCell(ingredient.origin)) missing.push("原產地");
+    if (!ingredient.supplierId) missing.push("供應商");
+    else if (!supplierById.has(Number(ingredient.supplierId))) missing.push("供應商不存在，請重新選擇");
+    if (missing.length) issues.ingredients.push({ ingredient, missing });
+  }
+
+  for (const seasoning of seasonings) {
+    const missing = [];
+    if (!cleanCell(seasoning.name)) missing.push("調味料名稱");
+    if (!seasoning.supplierId) missing.push("供應商");
+    else if (!supplierById.has(Number(seasoning.supplierId))) missing.push("供應商不存在，請重新選擇");
+    if (missing.length) issues.seasonings.push({ seasoning, missing });
+  }
+
+  return issues;
+}
+
+function supplierMissingFields(supplier) {
+  const fields = [
+    ["name", "供應商名稱"],
+    ["owner", "負責人"],
+    ["taxId", "統編"],
+    ["phone", "電話"],
+    ["address", "地址"]
+  ];
+  return fields.filter(([key]) => !cleanCell(supplier[key])).map(([, label]) => label);
 }
 
 function validateDownload(data, branch, fileTypes, recipeIds, startDate, endDate) {
