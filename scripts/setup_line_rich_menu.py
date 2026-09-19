@@ -1,5 +1,7 @@
 import json
 import os
+import sys
+from urllib.parse import urlencode
 import urllib.request
 from pathlib import Path
 
@@ -8,9 +10,12 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 OUT_DIR = ROOT / "artifacts" / "line"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 IMAGE_PATH = OUT_DIR / "rich_menu.png"
+
+from app.line_bot import make_line_access_token
 
 
 def env(name: str) -> str:
@@ -57,6 +62,11 @@ def delete_existing_default(token: str) -> None:
     except urllib.error.HTTPError as exc:
         if exc.code not in (404,):
             raise
+
+
+def line_user_web_url(app_base_url: str, line_user_id: str, path: str = "/uploads") -> str:
+    token = make_line_access_token(line_user_id)
+    return f"{app_base_url.rstrip('/')}/line-login?{urlencode({'token': token, 'next': path})}"
 
 
 def font(size: int) -> ImageFont.ImageFont:
@@ -111,15 +121,20 @@ def build_image() -> None:
 def main() -> None:
     load_dotenv(ROOT / ".env")
     token = env("LINE_CHANNEL_ACCESS_TOKEN")
+    app_base_url = env("APP_BASE_URL")
+    line_user_id = os.getenv("LINE_RICH_MENU_USER_ID", "").strip()
+    uploads_url = line_user_web_url(app_base_url, line_user_id, "/uploads") if line_user_id else ""
     build_image()
+    first_action = {"type": "uri", "uri": uploads_url} if uploads_url else {"type": "message", "text": "查詢已登錄狀況"}
+    second_action = {"type": "uri", "uri": uploads_url} if uploads_url else {"type": "message", "text": "設定休假不提醒"}
     payload = {
         "size": {"width": 2500, "height": 843},
         "selected": True,
         "name": "食材登錄快捷選單",
         "chatBarText": "快捷操作",
         "areas": [
-            {"bounds": {"x": 0, "y": 0, "width": 833, "height": 843}, "action": {"type": "message", "text": "查詢已登錄狀況"}},
-            {"bounds": {"x": 833, "y": 0, "width": 834, "height": 843}, "action": {"type": "message", "text": "設定休假不提醒"}},
+            {"bounds": {"x": 0, "y": 0, "width": 833, "height": 843}, "action": first_action},
+            {"bounds": {"x": 833, "y": 0, "width": 834, "height": 843}, "action": second_action},
             {"bounds": {"x": 1667, "y": 0, "width": 833, "height": 843}, "action": {"type": "message", "text": "說明"}},
         ],
     }
@@ -131,14 +146,24 @@ def main() -> None:
         IMAGE_PATH.read_bytes(),
         "image/png",
     )
-    delete_existing_default(token)
-    request_bytes(
-        f"https://api.line.me/v2/bot/user/all/richmenu/{rich_menu_id}",
-        token,
-        b"",
-        "application/json",
-    )
-    print(json.dumps({"richMenuId": rich_menu_id, "image": str(IMAGE_PATH)}, ensure_ascii=False))
+    if line_user_id:
+        request_bytes(
+            f"https://api.line.me/v2/bot/user/{line_user_id}/richmenu/{rich_menu_id}",
+            token,
+            b"",
+            "application/json",
+        )
+        mode = "linked_user"
+    else:
+        delete_existing_default(token)
+        request_bytes(
+            f"https://api.line.me/v2/bot/user/all/richmenu/{rich_menu_id}",
+            token,
+            b"",
+            "application/json",
+        )
+        mode = "default"
+    print(json.dumps({"richMenuId": rich_menu_id, "image": str(IMAGE_PATH), "mode": mode}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

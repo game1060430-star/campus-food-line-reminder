@@ -138,7 +138,7 @@ def handle_line_text(text: str, line_user_id: str, db: Session, config: LineConf
     if normalized in {"今日狀態", "狀態", "今天"}:
         return today_status(bindings, db)
     if normalized in {"登錄狀況", "登錄狀況查詢", "上傳查詢", "查詢登錄", "查詢已登錄狀況"}:
-        return upload_confirmation_status(normalized, bindings, db) + "\n\n" + line_user_upload_link(config, line_user_id)
+        return upload_confirmation_status(normalized, bindings, db)
     if normalized.startswith(("登錄狀況 ", "查詢已登錄狀況 ")):
         return upload_confirmation_status(normalized, bindings, db)
     if normalized in {"上傳狀態", "任務", "待辦", "官方同步", "同步官方資料", "同步", "驗證碼", "captcha", "CAPTCHA"}:
