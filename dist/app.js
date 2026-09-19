@@ -222,7 +222,7 @@ function renderMasters(data) {
       <p class="muted">先大量建立名稱就好。供應商負責人、統編、電話、地址可以之後再補；食材原產地空白會先用「臺灣」。</p>
     </form>
     ${bulkMasterModeButtons()}
-    ${bulkMastersEditor(suppliers, ingredients, seasonings, data.branches, state.masterBatchMode)}
+    ${bulkMastersEditor(suppliers, ingredients, seasonings, data.branches, data.recipes, data.recipeIngredients, state.masterBatchMode)}
     <h2>供應商</h2>
     <form class="card" data-action="addSupplier">
       <label>供應商名稱<input name="name" required></label>
@@ -434,6 +434,7 @@ function bulkMasterModeButtons() {
   const modes = [
     ["suppliers", "補供應商資料"],
     ["ingredientSuppliers", "設定食材供應商"],
+    ["ingredientRecipes", "設定食材使用菜色"],
     ["seasoningSuppliers", "設定調味料供應商"],
     ["scopes", "設定可用分店"]
   ];
@@ -445,12 +446,13 @@ function bulkMasterModeButtons() {
     </div>`;
 }
 
-function bulkMastersEditor(suppliers, ingredients, seasonings, branches, mode) {
+function bulkMastersEditor(suppliers, ingredients, seasonings, branches, recipes, recipeIngredients, mode) {
   if (!suppliers.length && !ingredients.length && !seasonings.length) return "";
   if (!mode) return "";
   const title = {
     suppliers: "補供應商資料",
     ingredientSuppliers: "設定食材供應商",
+    ingredientRecipes: "設定食材使用菜色",
     seasoningSuppliers: "設定調味料供應商",
     scopes: "設定可用分店"
   }[mode] || "批量修改資料";
@@ -495,6 +497,24 @@ function bulkMastersEditor(suppliers, ingredients, seasonings, branches, mode) {
             <b>${escapeHtml(item.name || "未命名調味料")}</b>
             <label>供應商<select name="seasoningSupplierIds"><option value="">待補</option>${suppliers.map(s => `<option value="${s.id}" ${Number(item.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}</select></label>
           </div>`).join("") || `<p class="muted">沒有調味料</p>`}
+        ` : ""}
+        ${mode === "ingredientRecipes" ? html`<h2>食材使用菜色</h2>
+          <p class="muted">用食材反向設定哪些菜色會用到它。例如點「漢堡肉」，下面勾所有漢堡類菜色。</p>
+          ${ingredients.map(item => {
+            const usedRecipeIds = new Set(recipeIngredients.filter(link => Number(link.ingredientId) === Number(item.id)).map(link => Number(link.recipeId)));
+            return html`
+              <details class="composition-item">
+                <summary>${escapeHtml(item.ingredientName || "未命名食材")} <small>${usedRecipeIds.size} 道菜使用</small></summary>
+                <input type="hidden" name="ingredientRecipeIngredientIds" value="${item.id}">
+                <div class="split-actions">
+                  <button type="button" class="secondary" data-check-all="ingredient_${item.id}_recipeIds">全選菜色</button>
+                  <button type="button" class="secondary" data-uncheck-all="ingredient_${item.id}_recipeIds">清除勾選</button>
+                </div>
+                <div class="choice-grid">
+                  ${recipes.map(recipe => `<label class="check chip"><input type="checkbox" name="ingredient_${item.id}_recipeIds" value="${recipe.id}" ${usedRecipeIds.has(Number(recipe.id)) ? "checked" : ""}><span>${escapeHtml(recipe.name)}</span></label>`).join("") || `<p class="muted">尚未建立菜色</p>`}
+                </div>
+              </details>`;
+          }).join("") || `<p class="muted">沒有食材</p>`}
         ` : ""}
         ${mode === "scopes" ? html`<h2>供應商可用分店</h2>
           ${suppliers.map(item => html`
@@ -897,6 +917,18 @@ async function bulkSaveMasters(form) {
       name: row.seasoningNames,
       supplierId: row.seasoningSupplierIds ? Number(row.seasoningSupplierIds) : null
     });
+  }
+  await bulkSaveIngredientRecipeUsage(formData);
+}
+
+async function bulkSaveIngredientRecipeUsage(formData) {
+  const ingredientIds = formData.getAll("ingredientRecipeIngredientIds").map(Number).filter(Boolean);
+  if (!ingredientIds.length) return;
+  const selectedIngredientIds = new Set(ingredientIds);
+  await deleteWhere("recipeIngredients", link => selectedIngredientIds.has(Number(link.ingredientId)));
+  for (const ingredientId of ingredientIds) {
+    const recipeIds = formData.getAll(`ingredient_${ingredientId}_recipeIds`).map(Number).filter(Boolean);
+    for (const recipeId of recipeIds) await put("recipeIngredients", { recipeId, ingredientId });
   }
 }
 
