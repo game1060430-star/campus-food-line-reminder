@@ -222,7 +222,7 @@ function renderMasters(data) {
       <p class="muted">先大量建立名稱就好。供應商負責人、統編、電話、地址可以之後再補；食材原產地空白會先用「臺灣」。</p>
     </form>
     ${bulkMasterModeButtons()}
-    ${bulkMastersEditor(suppliers, ingredients, seasonings, data.branches, data.recipes, data.recipeIngredients, state.masterBatchMode)}
+    ${bulkMastersEditor(suppliers, ingredients, seasonings, data.branches, data.recipes, data.recipeIngredients, data.recipeSeasonings, state.masterBatchMode)}
     <h2>供應商</h2>
     <form class="card" data-action="addSupplier">
       <label>供應商名稱<input name="name" required></label>
@@ -293,6 +293,16 @@ function renderExports(data) {
       </label>
       <label>開始日期<input name="startDate" type="date" required value="${startDate}"></label>
       <label>結束日期<input name="endDate" type="date" required value="${endDate}"></label>
+      <h2>休假日</h2>
+      <details class="export-closed-days">
+        <summary>勾選這次不用上傳的休假日</summary>
+        <p class="muted">六日原本就會自動略過；這裡用來排除臨時休假或不用供餐的日期。</p>
+        <div class="split-actions">
+          <button type="button" class="secondary" data-render-export-calendar>更新日曆</button>
+          <button type="button" class="secondary" data-uncheck-all="excludedDates">清除休假日</button>
+        </div>
+        <div id="exportClosedCalendar">${renderExportClosedCalendar(startDate, endDate)}</div>
+      </details>
       <h2>要產生哪些檔案</h2>
       <label class="check"><input type="checkbox" name="fileTypes" value="menus" checked><span>菜單 Excel</span></label>
       <label class="check"><input type="checkbox" name="fileTypes" value="ingredients" checked><span>食材 Excel</span></label>
@@ -351,6 +361,22 @@ function renderRepairPanel(data, branchId, issues) {
         <button>儲存待補資料</button>
       </form>
     </details>`;
+}
+
+function renderExportClosedCalendar(startDate, endDate) {
+  if (!startDate || !endDate || startDate > endDate) return `<p class="muted">請先選擇正確日期區間。</p>`;
+  const dates = allDates(startDate, endDate);
+  return html`
+    <div class="calendar-grid compact-calendar">
+      ${dates.map(dateText => {
+        const day = parseLocalDate(dateText).getDay();
+        const weekend = day === 0 || day === 6;
+        return `<label class="calendar-choice ${weekend ? "muted-day" : ""}">
+          <input type="checkbox" name="excludedDates" value="${dateText}" ${weekend ? "disabled" : ""}>
+          <span>${dateText.slice(5).replace("-", "/")}<small>${weekend ? "六日自動略過" : "休假"}</small></span>
+        </label>`;
+      }).join("")}
+    </div>`;
 }
 
 function renderRepairFields(data, branchId, issues) {
@@ -436,6 +462,7 @@ function bulkMasterModeButtons() {
     ["ingredientSuppliers", "設定食材供應商"],
     ["ingredientRecipes", "設定食材使用菜色"],
     ["seasoningSuppliers", "設定調味料供應商"],
+    ["seasoningRecipes", "設定調味料使用菜色"],
     ["scopes", "設定可用分店"],
     ["delete", "批量刪除"]
   ];
@@ -447,7 +474,7 @@ function bulkMasterModeButtons() {
     </div>`;
 }
 
-function bulkMastersEditor(suppliers, ingredients, seasonings, branches, recipes, recipeIngredients, mode) {
+function bulkMastersEditor(suppliers, ingredients, seasonings, branches, recipes, recipeIngredients, recipeSeasonings, mode) {
   if (!suppliers.length && !ingredients.length && !seasonings.length) return "";
   if (!mode) return "";
   const title = {
@@ -455,6 +482,7 @@ function bulkMastersEditor(suppliers, ingredients, seasonings, branches, recipes
     ingredientSuppliers: "設定食材供應商",
     ingredientRecipes: "設定食材使用菜色",
     seasoningSuppliers: "設定調味料供應商",
+    seasoningRecipes: "設定調味料使用菜色",
     scopes: "設定可用分店",
     delete: "批量刪除"
   }[mode] || "批量修改資料";
@@ -522,6 +550,24 @@ function bulkMastersEditor(suppliers, ingredients, seasonings, branches, recipes
                 </div>
               </details>`;
           }).join("") || `<p class="muted">沒有食材</p>`}
+        ` : ""}
+        ${mode === "seasoningRecipes" ? html`<h2>調味料使用菜色</h2>
+          <p class="muted">用調味料反向設定哪些菜色會用到它。例如點「胡椒粉」，下面勾會用到胡椒粉的菜色。</p>
+          ${seasonings.map(item => {
+            const usedRecipeIds = new Set(recipeSeasonings.filter(link => Number(link.seasoningId) === Number(item.id)).map(link => Number(link.recipeId)));
+            return html`
+              <details class="composition-item">
+                <summary>${escapeHtml(item.name || "未命名調味料")} <small>${usedRecipeIds.size} 道菜使用</small></summary>
+                <input type="hidden" name="seasoningRecipeSeasoningIds" value="${item.id}">
+                <div class="split-actions">
+                  <button type="button" class="secondary" data-check-all="seasoning_${item.id}_recipeIds">全選菜色</button>
+                  <button type="button" class="secondary" data-uncheck-all="seasoning_${item.id}_recipeIds">清除勾選</button>
+                </div>
+                <div class="choice-grid">
+                  ${recipes.map(recipe => `<label class="check chip"><input type="checkbox" name="seasoning_${item.id}_recipeIds" value="${recipe.id}" ${usedRecipeIds.has(Number(recipe.id)) ? "checked" : ""}><span>${escapeHtml(recipe.name)}</span></label>`).join("") || `<p class="muted">尚未建立菜色</p>`}
+                </div>
+              </details>`;
+          }).join("") || `<p class="muted">沒有調味料</p>`}
         ` : ""}
         ${mode === "scopes" ? html`<h2>供應商可用分店</h2>
           ${suppliers.map(item => html`
@@ -959,6 +1005,7 @@ async function bulkSaveMasters(form) {
     });
   }
   await bulkSaveIngredientRecipeUsage(formData);
+  await bulkSaveSeasoningRecipeUsage(formData);
 }
 
 async function bulkSaveIngredientRecipeUsage(formData) {
@@ -969,6 +1016,17 @@ async function bulkSaveIngredientRecipeUsage(formData) {
   for (const ingredientId of ingredientIds) {
     const recipeIds = formData.getAll(`ingredient_${ingredientId}_recipeIds`).map(Number).filter(Boolean);
     for (const recipeId of recipeIds) await put("recipeIngredients", { recipeId, ingredientId });
+  }
+}
+
+async function bulkSaveSeasoningRecipeUsage(formData) {
+  const seasoningIds = formData.getAll("seasoningRecipeSeasoningIds").map(Number).filter(Boolean);
+  if (!seasoningIds.length) return;
+  const selectedSeasoningIds = new Set(seasoningIds);
+  await deleteWhere("recipeSeasonings", link => selectedSeasoningIds.has(Number(link.seasoningId)));
+  for (const seasoningId of seasoningIds) {
+    const recipeIds = formData.getAll(`seasoning_${seasoningId}_recipeIds`).map(Number).filter(Boolean);
+    for (const recipeId of recipeIds) await put("recipeSeasonings", { recipeId, seasoningId });
   }
 }
 
@@ -1404,9 +1462,10 @@ async function downloadOfficial(form) {
   const recipeIds = new Set(formData.getAll("recipeIds").map(Number));
   const ingredientSource = formData.get("ingredientSource") || "recipes";
   const manualIngredientIds = new Set(formData.getAll("manualIngredientIds").map(Number).filter(Boolean));
+  const excludedDates = new Set(formData.getAll("excludedDates"));
   const startDate = formData.get("startDate");
   const endDate = formData.get("endDate");
-  const options = { ingredientSource, manualIngredientIds };
+  const options = { ingredientSource, manualIngredientIds, excludedDates };
   const problems = validateDownload(data, branch, fileTypes, recipeIds, startDate, endDate, options);
   if (problems.length) {
     const repairIssues = collectDownloadRepairIssues(data, branch, fileTypes, recipeIds, options);
@@ -1563,6 +1622,7 @@ function validateDownload(data, branch, fileTypes, recipeIds, startDate, endDate
   const problems = [];
   if (!branch) problems.push("請先選擇分店。");
   if (!startDate || !endDate || startDate > endDate) problems.push("日期區間不正確。");
+  if (startDate && endDate && startDate <= endDate && !serviceDates(startDate, endDate, options.excludedDates).length) problems.push("扣除六日和休假日後，沒有可上傳的供餐日期。");
   if (!fileTypes.length) problems.push("請至少勾選一種 Excel。");
   const recipes = availableForBranch(data.recipes, branch?.id).filter(recipe => recipeIds.has(Number(recipe.id)));
   if (fileTypes.includes("menus") && !recipes.length) problems.push("產生菜單 Excel 請至少選一個菜色。");
@@ -1603,7 +1663,7 @@ function fieldLabel(field) {
 }
 
 function buildOfficialRows(data, branch, recipeIds, startDate, endDate, options = {}) {
-  const dates = serviceDates(startDate, endDate);
+  const dates = serviceDates(startDate, endDate, options.excludedDates);
   const recipes = availableForBranch(data.recipes, branch.id).filter(recipe => recipeIds.has(Number(recipe.id)));
   const seasoningIds = usedSeasoningIds(data, recipes);
   const suppliers = availableForBranch(data.suppliers, branch.id);
@@ -1675,12 +1735,19 @@ function usedSuppliers(data, recipes, fileTypes, options = {}) {
   return data.suppliers.filter(item => ids.has(Number(item.id)));
 }
 
-function serviceDates(startDate, endDate) {
+function serviceDates(startDate, endDate, excludedDates = new Set()) {
   const dates = [];
   for (let date = parseLocalDate(startDate); date <= parseLocalDate(endDate); date = addDays(date, 1)) {
     const day = date.getDay();
-    if (day !== 0 && day !== 6) dates.push(formatDate(date));
+    const dateText = formatDate(date);
+    if (day !== 0 && day !== 6 && !excludedDates.has(dateText)) dates.push(dateText);
   }
+  return dates;
+}
+
+function allDates(startDate, endDate) {
+  const dates = [];
+  for (let date = parseLocalDate(startDate); date <= parseLocalDate(endDate); date = addDays(date, 1)) dates.push(formatDate(date));
   return dates;
 }
 
@@ -1925,6 +1992,14 @@ document.addEventListener("click", async event => {
     document.querySelectorAll(`input[name="${uncheckAll.dataset.uncheckAll}"], input[data-delete-group="${uncheckAll.dataset.uncheckAll}"]`).forEach(input => {
       input.checked = false;
     });
+  }
+  const renderCalendar = event.target.closest("[data-render-export-calendar]");
+  if (renderCalendar) {
+    const form = renderCalendar.closest("form");
+    const target = form?.querySelector("#exportClosedCalendar");
+    const startDate = form?.querySelector(`input[name="startDate"]`)?.value;
+    const endDate = form?.querySelector(`input[name="endDate"]`)?.value;
+    if (target) target.innerHTML = renderExportClosedCalendar(startDate, endDate);
   }
   const deleteButton = event.target.closest("[data-delete]");
   if (deleteButton && confirm(deleteConfirmText(deleteButton.dataset.delete))) {
