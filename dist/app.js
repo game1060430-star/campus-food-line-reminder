@@ -1186,7 +1186,7 @@ async function downloadOfficial(form) {
   const endDate = formData.get("endDate");
   const problems = validateDownload(data, branch, fileTypes, recipeIds, startDate, endDate);
   if (problems.length) {
-    const repairIssues = collectRepairIssues(data, branchId);
+    const repairIssues = collectDownloadRepairIssues(data, branch, fileTypes, recipeIds);
     result.innerHTML = html`
       <div class="notice"><b>先補完這些資料：</b><ul class="warning-list">${problems.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>
       <div class="card repair-panel" data-download-repair>
@@ -1268,6 +1268,53 @@ function collectRepairIssues(data, branchId) {
     if (!seasoning.supplierId) missing.push("供應商");
     else if (!supplierById.has(Number(seasoning.supplierId))) missing.push("供應商不存在，請重新選擇");
     if (missing.length) issues.seasonings.push({ seasoning, missing });
+  }
+
+  return issues;
+}
+
+function collectDownloadRepairIssues(data, branch, fileTypes, recipeIds) {
+  const branchId = branch?.id;
+  const recipes = availableForBranch(data.recipes, branchId).filter(recipe => recipeIds.has(Number(recipe.id)));
+  const supplierById = new Map(data.suppliers.map(item => [Number(item.id), item]));
+  const issues = { branches: [], suppliers: [], ingredients: [], seasonings: [] };
+
+  if (!branch) issues.branches.push("尚未選擇分店。");
+  for (const field of ["schoolName", "serviceLocation", "restaurantName"]) {
+    if (branch && !cleanCell(branch[field])) issues.branches.push(`分店「${branch.name}」缺少${fieldLabel(field)}。`);
+  }
+
+  if (fileTypes.includes("ingredients")) {
+    for (const id of usedIngredientIds(data, recipes)) {
+      const ingredient = data.ingredients.find(item => Number(item.id) === Number(id));
+      if (!ingredient) continue;
+      const missing = [];
+      if (!cleanCell(ingredient.ingredientName)) missing.push("食材名稱");
+      if (!cleanCell(ingredient.productName)) missing.push("產品名稱");
+      if (!cleanCell(ingredient.origin)) missing.push("原產地");
+      if (!ingredient.supplierId) missing.push("供應商");
+      else if (!supplierById.has(Number(ingredient.supplierId))) missing.push("供應商不存在，請重新選擇");
+      if (missing.length) issues.ingredients.push({ ingredient, missing });
+    }
+  }
+
+  if (fileTypes.includes("seasonings")) {
+    for (const seasoning of usedSeasonings(data, recipes)) {
+      if (!seasoning) continue;
+      const missing = [];
+      if (!cleanCell(seasoning.name)) missing.push("調味料名稱");
+      if (!seasoning.supplierId) missing.push("供應商");
+      else if (!supplierById.has(Number(seasoning.supplierId))) missing.push("供應商不存在，請重新選擇");
+      if (missing.length) issues.seasonings.push({ seasoning, missing });
+    }
+  }
+
+  const suppliersToCheck = fileTypes.includes("suppliers")
+    ? availableForBranch(data.suppliers, branchId)
+    : usedSuppliers(data, recipes, fileTypes);
+  for (const supplier of suppliersToCheck) {
+    const missing = supplierMissingFields(supplier);
+    if (missing.length) issues.suppliers.push({ supplier, missing });
   }
 
   return issues;
