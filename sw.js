@@ -1,9 +1,9 @@
-const CACHE_NAME = "campus-food-local-v20260919-6";
+const CACHE_NAME = "campus-food-local-v20260919-7";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=20260919-6",
-  "./app.js?v=20260919-6",
+  "./styles.css?v=20260919-7",
+  "./app.js?v=20260919-7",
   "./manifest.json",
   "./icon.svg",
   "./vendor/xlsx.full.min.js",
