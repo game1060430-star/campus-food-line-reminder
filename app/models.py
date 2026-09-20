@@ -174,3 +174,11 @@ class HygienePairCode(Base):
     code_hash = Column(String(64), unique=True, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
+
+class HygieneDeviceSession(Base):
+    __tablename__ = "hygiene_device_sessions"
+    id = Column(Integer, primary_key=True)
+    token_hash = Column(String(64), unique=True, nullable=False)
+    line_user_id = Column(String(120), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)

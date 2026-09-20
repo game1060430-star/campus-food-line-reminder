@@ -1,4 +1,5 @@
 import base64
+import binascii
 import hashlib
 import hmac
 import os
@@ -9,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import HygieneOwnerBinding, HygienePairCode
+from .models import HygieneDeviceSession, HygieneOwnerBinding, HygienePairCode
 
 
 # One-time bootstrap only; the password is disabled as soon as a LINE owner is bound.
@@ -46,17 +47,46 @@ def claim_pair_code(db: Session, code: str, line_user_id: str) -> bool:
 
 
 def bootstrap_token_valid(token: str) -> bool:
+    return verify_owner_token_user(token) == "password-bootstrap"
+
+
+def verify_owner_token_user(token: str) -> str | None:
     secret = os.getenv("WEB_ACCESS_TOKEN", "").strip()
     if not secret or "." not in token:
-        return False
+        return None
     key = hmac.new(secret.encode(), b"wazi-hygiene-sync-v1", hashlib.sha256).hexdigest()
     payload, signature = token.split(".", 1)
     expected = base64.urlsafe_b64encode(hmac.new(key.encode(), payload.encode(), hashlib.sha256).digest()).decode().rstrip("=")
     if not hmac.compare_digest(signature, expected):
-        return False
+        return None
     try:
         decoded = base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)).decode()
         marker, user_id, expiry = decoded.split("|")
-        return marker == "wazi-hygiene-owner" and user_id == "password-bootstrap" and int(expiry) >= time.time()
-    except (ValueError, UnicodeDecodeError):
-        return False
+        if marker == "wazi-hygiene-owner" and user_id and int(expiry) >= time.time():
+            return user_id
+    except (ValueError, UnicodeDecodeError, binascii.Error):
+        pass
+    return None
+
+
+def create_device_session(db: Session, line_user_id: str) -> str:
+    token = secrets.token_urlsafe(32)
+    db.add(HygieneDeviceSession(
+        token_hash=hashlib.sha256(token.encode()).hexdigest(),
+        line_user_id=line_user_id,
+        expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=90),
+    ))
+    db.commit()
+    return token
+
+
+def valid_device_session(db: Session, token: str) -> HygieneDeviceSession | None:
+    if not token:
+        return None
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    row = db.scalar(select(HygieneDeviceSession).where(HygieneDeviceSession.token_hash == token_hash))
+    owner = db.get(HygieneOwnerBinding, 1)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if not row or not owner or row.revoked_at or row.expires_at <= now:
+        return None
+    return row if hmac.compare_digest(row.line_user_id, owner.line_user_id) else None

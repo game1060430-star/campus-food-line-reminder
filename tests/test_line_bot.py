@@ -7,8 +7,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.line_bot import LineConfig, bind_line_user, handle_line_text, verify_line_signature
-from app.hygiene_owner import bootstrap_password_valid, claim_pair_code, create_pair_code
-from app.models import Base, Branch, ClosedDate, HygieneOwnerBinding, LineBindingCode, LineUserBinding, UploadConfirmation
+from app.hygiene_owner import bootstrap_password_valid, claim_pair_code, create_device_session, create_pair_code, valid_device_session, verify_owner_token_user
+from app.models import Base, Branch, ClosedDate, HygieneDeviceSession, HygieneOwnerBinding, LineBindingCode, LineUserBinding, UploadConfirmation
 
 
 def make_db():
@@ -129,6 +129,37 @@ def test_hygiene_pair_code_rejects_wrong_and_expired_codes():
 
 def test_hygiene_bootstrap_password_hash():
     assert not bootstrap_password_valid("incorrect")
+
+
+def test_hygiene_device_session_requires_current_owner(monkeypatch):
+    monkeypatch.setenv("WEB_ACCESS_TOKEN", "test-only-secret")
+    db = make_db()
+    db.add(HygieneOwnerBinding(id=1, line_user_id="UOWNER"))
+    db.commit()
+    token = create_device_session(db, "UOWNER")
+    assert valid_device_session(db, token).line_user_id == "UOWNER"
+    assert valid_device_session(db, "wrong") is None
+    assert verify_owner_token_user(handle_line_text("衛生管理", "UOWNER", db, LineConfig("", "", "")).split("#owner=", 1)[1].splitlines()[0]) == "UOWNER"
+    db.query(HygieneOwnerBinding).one().line_user_id = "UOTHER"
+    db.commit()
+    assert valid_device_session(db, token) is None
+
+
+def test_hygiene_device_session_rejects_revoked_and_expired():
+    from datetime import datetime, timedelta, timezone
+
+    db = make_db()
+    db.add(HygieneOwnerBinding(id=1, line_user_id="UOWNER"))
+    db.commit()
+    token = create_device_session(db, "UOWNER")
+    row = db.query(HygieneDeviceSession).one()
+    row.revoked_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.commit()
+    assert valid_device_session(db, token) is None
+    row.revoked_at = None
+    row.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=1)
+    db.commit()
+    assert valid_device_session(db, token) is None
 
 
 def test_line_text_requires_binding_before_status():

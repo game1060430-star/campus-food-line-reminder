@@ -4,7 +4,7 @@ import hmac
 import os
 import secrets
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from .database import Base, engine, get_db
 from .line_bot import LineConfig, handle_line_event, make_hygiene_owner_token, reply_text, verify_line_signature
-from .hygiene_owner import bootstrap_password_valid, bootstrap_token_valid, create_pair_code
+from .hygiene_owner import bootstrap_password_valid, bootstrap_token_valid, create_device_session, create_pair_code, valid_device_session, verify_owner_token_user
 from .models import Branch, ClosedDate, HygieneOwnerBinding, LineBindingCode, LineUserBinding, UploadConfirmation
 from .services.excel_export import parse_excluded_dates, service_dates
 from .services.upload_reminders import send_due_upload_reminders
@@ -212,6 +212,30 @@ def hygiene_pair_code(request: Request, db: Session = Depends(get_db)):
     if not bootstrap_token_valid(token):
         raise HTTPException(403, "啟用連線已過期。")
     return {"pairCode": create_pair_code(db)}
+
+
+@app.post("/api/hygiene/device-session")
+def hygiene_device_session(request: Request, db: Session = Depends(get_db)):
+    token = request.headers.get("authorization", "").removeprefix("Bearer ")
+    line_user_id = verify_owner_token_user(token)
+    owner = db.get(HygieneOwnerBinding, 1)
+    if not owner or not line_user_id or not hmac.compare_digest(owner.line_user_id, line_user_id):
+        raise HTTPException(403, "LINE 主控連結無效或已過期，請重新傳「衛生管理」。")
+    return {"deviceToken": create_device_session(db, line_user_id), "lineToken": make_hygiene_owner_token(line_user_id), "expiresAt": int(time.time()) + 15 * 60}
+
+
+@app.post("/api/hygiene/device-refresh")
+def hygiene_device_refresh(request: Request, db: Session = Depends(get_db)):
+    token = request.headers.get("authorization", "").removeprefix("Bearer ")
+    session = valid_device_session(db, token)
+    if not session:
+        raise HTTPException(403, "本機主控登入已失效，請從 LINE 重新取得連結。")
+    line_token = make_hygiene_owner_token(session.line_user_id)
+    if not line_token:
+        raise HTTPException(503, "主控簽章尚未設定。")
+    session.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=90)
+    db.commit()
+    return {"lineToken": line_token, "expiresAt": int(time.time()) + 15 * 60}
 
 
 @app.get("/")
