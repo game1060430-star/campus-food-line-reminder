@@ -91,6 +91,30 @@ def test_operator_cannot_create_operator_code():
     assert "只有管理員" in message
 
 
+def test_hygiene_owner_link_requires_designated_line_id_and_is_short_lived(monkeypatch):
+    monkeypatch.setenv("WEB_ACCESS_TOKEN", "test-only-secret")
+    monkeypatch.setenv("HYGIENE_OWNER_LINE_USER_ID", "UOWNER")
+    db = make_db()
+    branch = Branch(name="娃子", school_name="A校", service_location="午餐", restaurant_name="A餐廳")
+    db.add(branch)
+    db.commit()
+    db.add(LineUserBinding(line_user_id="UOWNER", branch_id=branch.id, role="operator"))
+    db.add(LineUserBinding(line_user_id="UOP", branch_id=branch.id, role="operator"))
+    db.commit()
+    config = LineConfig(channel_secret="", channel_access_token="", app_base_url="https://example.test")
+
+    owner_message = handle_line_text("衛生管理", "UOWNER", db, config)
+    operator_message = handle_line_text("衛生管理", "UOP", db, config)
+
+    assert "#owner=" in owner_message
+    assert "15 分鐘" in owner_message
+    assert "尚未設為" in operator_message
+    assert "你的 LINE 識別碼：UOWNER" == handle_line_text("我的識別碼", "UOWNER", db, config)
+    token = owner_message.split("#owner=", 1)[1].splitlines()[0]
+    payload = base64.urlsafe_b64decode(token.split(".", 1)[0] + "==").decode()
+    assert payload.startswith("wazi-hygiene-owner|UOWNER|")
+
+
 def test_line_text_requires_binding_before_status():
     db = make_db()
     config = LineConfig(channel_secret="", channel_access_token="", app_base_url="https://example.test")

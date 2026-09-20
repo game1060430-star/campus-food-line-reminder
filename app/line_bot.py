@@ -120,8 +120,18 @@ def handle_line_text(text: str, line_user_id: str, db: Session, config: LineConf
 
     if normalized in {"我的身分", "身分", "權限"}:
         return identity_text(bindings, db)
+    if normalized in {"我的識別碼", "衛生識別碼"}:
+        return f"你的 LINE 識別碼：{line_user_id}"
     if normalized in {"產生店長綁定碼", "新增店長", "店長綁定碼"}:
         return create_operator_code(line_user_id, db)
+    if normalized in {"衛生管理", "衛生檢查", "衛生設定"}:
+        owner_user_id = os.getenv("HYGIENE_OWNER_LINE_USER_ID", "").strip()
+        if not owner_user_id or not hmac.compare_digest(line_user_id, owner_user_id):
+            return "此 LINE 帳號尚未設為衛生系統主控。"
+        token = make_hygiene_owner_token(line_user_id)
+        if not token:
+            return "衛生管理入口尚未設定，請確認 WEB_ACCESS_TOKEN。"
+        return f"衛生管理設定：\nhttps://wazi-health-inspection-system.vercel.app/#owner={token}\n連結 15 分鐘內有效。"
     if normalized in {"管理員說明", "管理"}:
         return admin_help_text(bindings)
     if normalized in {"安全連結", "登入連結", "網頁入口"}:
@@ -208,6 +218,8 @@ def help_text(bindings: list[LineUserBinding] | None = None) -> str:
         "今日狀態",
         "安全連結",
         "我的身分",
+        "我的識別碼",
+        "衛生管理",
     ]
     if bindings and is_admin(bindings):
         lines.extend(["管理員說明", "產生店長綁定碼"])
@@ -255,6 +267,23 @@ def make_line_access_token(line_user_id: str, max_age_seconds: int = 60 * 60 * 2
     expires = str(int(time.time()) + max_age_seconds)
     payload = _b64url(f"{line_user_id}|{expires}".encode())
     signature = _b64url(hmac.new(secret.encode(), payload.encode(), hashlib.sha256).digest())
+    return f"{payload}.{signature}"
+
+
+def hygiene_signing_key() -> str:
+    secret = os.getenv("WEB_ACCESS_TOKEN", "").strip()
+    if not secret:
+        return ""
+    return hmac.new(secret.encode(), b"wazi-hygiene-sync-v1", hashlib.sha256).hexdigest()
+
+
+def make_hygiene_owner_token(line_user_id: str, max_age_seconds: int = 15 * 60) -> str:
+    key = hygiene_signing_key()
+    if not key:
+        return ""
+    expires = str(int(time.time()) + max_age_seconds)
+    payload = _b64url(f"wazi-hygiene-owner|{line_user_id}|{expires}".encode())
+    signature = _b64url(hmac.new(key.encode(), payload.encode(), hashlib.sha256).digest())
     return f"{payload}.{signature}"
 
 
