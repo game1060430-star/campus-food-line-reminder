@@ -14,7 +14,8 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Branch, ClosedDate, DailyMenu, LineBindingCode, LineUserBinding, UploadConfirmation
+from .models import Branch, ClosedDate, DailyMenu, HygieneOwnerBinding, LineBindingCode, LineUserBinding, UploadConfirmation
+from .hygiene_owner import claim_pair_code
 
 
 LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
@@ -108,6 +109,21 @@ def handle_line_event(event: dict, db: Session, config: LineConfig | None = None
 
 def handle_line_text(text: str, line_user_id: str, db: Session, config: LineConfig) -> str:
     normalized = text.replace("　", " ").strip()
+    if normalized.startswith("綁定衛生主控"):
+        parts = normalized.split()
+        if len(parts) != 2:
+            return "請輸入「綁定衛生主控 配對碼」。"
+        if not claim_pair_code(db, parts[1], line_user_id):
+            return "衛生主控配對碼無效、已使用或已過期。"
+        return "衛生主控已綁定此 LINE 帳號。請傳「衛生管理」取得設定入口。"
+    if normalized in {"衛生管理", "衛生檢查", "衛生設定"}:
+        owner = db.get(HygieneOwnerBinding, 1)
+        if not owner or not hmac.compare_digest(line_user_id, owner.line_user_id):
+            return "此 LINE 帳號尚未設為衛生系統主控。"
+        token = make_hygiene_owner_token(line_user_id)
+        if not token:
+            return "衛生管理入口尚未設定，請確認 WEB_ACCESS_TOKEN。"
+        return f"衛生管理設定：\nhttps://wazi-health-inspection-system.vercel.app/#owner={token}\n連結 15 分鐘內有效。"
     if normalized.startswith("綁定"):
         parts = normalized.split()
         if len(parts) < 2:
@@ -124,14 +140,6 @@ def handle_line_text(text: str, line_user_id: str, db: Session, config: LineConf
         return f"你的 LINE 識別碼：{line_user_id}"
     if normalized in {"產生店長綁定碼", "新增店長", "店長綁定碼"}:
         return create_operator_code(line_user_id, db)
-    if normalized in {"衛生管理", "衛生檢查", "衛生設定"}:
-        owner_user_id = os.getenv("HYGIENE_OWNER_LINE_USER_ID", "").strip()
-        if not owner_user_id or not hmac.compare_digest(line_user_id, owner_user_id):
-            return "此 LINE 帳號尚未設為衛生系統主控。"
-        token = make_hygiene_owner_token(line_user_id)
-        if not token:
-            return "衛生管理入口尚未設定，請確認 WEB_ACCESS_TOKEN。"
-        return f"衛生管理設定：\nhttps://wazi-health-inspection-system.vercel.app/#owner={token}\n連結 15 分鐘內有效。"
     if normalized in {"管理員說明", "管理"}:
         return admin_help_text(bindings)
     if normalized in {"安全連結", "登入連結", "網頁入口"}:

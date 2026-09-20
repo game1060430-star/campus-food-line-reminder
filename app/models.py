@@ -161,3 +161,16 @@ class LineUserBinding(Base):
     active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
     __table_args__ = (UniqueConstraint('line_user_id','branch_id'),)
+
+class HygieneOwnerBinding(Base):
+    __tablename__ = "hygiene_owner_bindings"
+    id = Column(Integer, primary_key=True)
+    line_user_id = Column(String(120), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+class HygienePairCode(Base):
+    __tablename__ = "hygiene_pair_codes"
+    id = Column(Integer, primary_key=True)
+    code_hash = Column(String(64), unique=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)

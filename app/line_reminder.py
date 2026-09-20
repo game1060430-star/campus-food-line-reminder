@@ -8,6 +8,7 @@ from datetime import date, timedelta
 from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -15,20 +16,23 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .database import Base, engine, get_db
-from .line_bot import LineConfig, handle_line_event, reply_text, verify_line_signature
-from .models import Branch, ClosedDate, LineBindingCode, LineUserBinding, UploadConfirmation
+from .line_bot import LineConfig, handle_line_event, make_hygiene_owner_token, reply_text, verify_line_signature
+from .hygiene_owner import bootstrap_password_valid, bootstrap_token_valid, create_pair_code
+from .models import Branch, ClosedDate, HygieneOwnerBinding, LineBindingCode, LineUserBinding, UploadConfirmation
 from .services.excel_export import parse_excluded_dates, service_dates
 from .services.upload_reminders import send_due_upload_reminders
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="食材登錄 LINE 提醒")
+app.add_middleware(CORSMiddleware, allow_origins=["https://wazi-health-inspection-system.vercel.app"], allow_methods=["POST"], allow_headers=["Content-Type", "Authorization"])
 BASE = os.path.dirname(__file__)
 templates = Jinja2Templates(directory=os.path.join(BASE, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE, "static")), name="static")
 
-PUBLIC_PREFIXES = ("/api/line/webhook", "/health", "/line-login", "/static/")
+PUBLIC_PREFIXES = ("/api/line/webhook", "/api/hygiene/", "/health", "/line-login", "/static/")
 DEFAULT_WEEKDAYS = "0,1,2,3,4"
+_bootstrap_failures = {}
 
 
 def web_access_token() -> str:
@@ -177,6 +181,37 @@ async def require_access(request: Request, call_next):
 @app.get("/health")
 def health():
     return {"ok": True, "service": "line-reminder"}
+
+
+@app.post("/api/hygiene/bootstrap-login")
+async def hygiene_bootstrap_login(request: Request, db: Session = Depends(get_db)):
+    if db.get(HygieneOwnerBinding, 1):
+        raise HTTPException(403, "主控已綁定，請從 LINE 取得入口。")
+    ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    attempts = [stamp for stamp in _bootstrap_failures.get(ip, []) if now - stamp < 900]
+    if len(attempts) >= 5:
+        raise HTTPException(429, "嘗試次數過多，請稍後再試。")
+    body = await request.json()
+    if not bootstrap_password_valid(str(body.get("password", ""))):
+        attempts.append(now)
+        _bootstrap_failures[ip] = attempts
+        raise HTTPException(403, "啟用密碼錯誤。")
+    _bootstrap_failures.pop(ip, None)
+    token = make_hygiene_owner_token("password-bootstrap")
+    if not token:
+        raise HTTPException(503, "主控簽章尚未設定。")
+    return {"token": token, "pairCode": create_pair_code(db)}
+
+
+@app.post("/api/hygiene/pair-code")
+def hygiene_pair_code(request: Request, db: Session = Depends(get_db)):
+    if db.get(HygieneOwnerBinding, 1):
+        raise HTTPException(403, "主控已綁定。")
+    token = request.headers.get("authorization", "").removeprefix("Bearer ")
+    if not bootstrap_token_valid(token):
+        raise HTTPException(403, "啟用連線已過期。")
+    return {"pairCode": create_pair_code(db)}
 
 
 @app.get("/")

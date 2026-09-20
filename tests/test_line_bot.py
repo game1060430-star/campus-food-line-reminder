@@ -7,7 +7,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.line_bot import LineConfig, bind_line_user, handle_line_text, verify_line_signature
-from app.models import Base, Branch, ClosedDate, LineBindingCode, LineUserBinding, UploadConfirmation
+from app.hygiene_owner import bootstrap_password_valid, claim_pair_code, create_pair_code
+from app.models import Base, Branch, ClosedDate, HygieneOwnerBinding, LineBindingCode, LineUserBinding, UploadConfirmation
 
 
 def make_db():
@@ -91,17 +92,16 @@ def test_operator_cannot_create_operator_code():
     assert "只有管理員" in message
 
 
-def test_hygiene_owner_link_requires_designated_line_id_and_is_short_lived(monkeypatch):
+def test_hygiene_owner_link_requires_paired_line_id_and_is_short_lived(monkeypatch):
     monkeypatch.setenv("WEB_ACCESS_TOKEN", "test-only-secret")
-    monkeypatch.setenv("HYGIENE_OWNER_LINE_USER_ID", "UOWNER")
     db = make_db()
-    branch = Branch(name="娃子", school_name="A校", service_location="午餐", restaurant_name="A餐廳")
-    db.add(branch)
-    db.commit()
-    db.add(LineUserBinding(line_user_id="UOWNER", branch_id=branch.id, role="operator"))
-    db.add(LineUserBinding(line_user_id="UOP", branch_id=branch.id, role="operator"))
-    db.commit()
     config = LineConfig(channel_secret="", channel_access_token="", app_base_url="https://example.test")
+
+    assert "尚未設為" in handle_line_text("衛生管理", "UOWNER", db, config)
+    code = create_pair_code(db)
+    assert "已綁定" in handle_line_text("綁定衛生主控 " + code, "UOWNER", db, config)
+    assert db.get(HygieneOwnerBinding, 1).line_user_id == "UOWNER"
+    assert "無效" in handle_line_text("綁定衛生主控 " + code, "UOP", db, config)
 
     owner_message = handle_line_text("衛生管理", "UOWNER", db, config)
     operator_message = handle_line_text("衛生管理", "UOP", db, config)
@@ -109,10 +109,26 @@ def test_hygiene_owner_link_requires_designated_line_id_and_is_short_lived(monke
     assert "#owner=" in owner_message
     assert "15 分鐘" in owner_message
     assert "尚未設為" in operator_message
-    assert "你的 LINE 識別碼：UOWNER" == handle_line_text("我的識別碼", "UOWNER", db, config)
     token = owner_message.split("#owner=", 1)[1].splitlines()[0]
     payload = base64.urlsafe_b64decode(token.split(".", 1)[0] + "==").decode()
     assert payload.startswith("wazi-hygiene-owner|UOWNER|")
+
+
+def test_hygiene_pair_code_rejects_wrong_and_expired_codes():
+    from datetime import datetime, timedelta, timezone
+    from app.models import HygienePairCode
+
+    db = make_db()
+    code = create_pair_code(db)
+    assert not claim_pair_code(db, "BADCODE", "UOWNER")
+    row = db.query(HygienePairCode).one()
+    row.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=1)
+    db.commit()
+    assert not claim_pair_code(db, code, "UOWNER")
+
+
+def test_hygiene_bootstrap_password_hash():
+    assert not bootstrap_password_valid("incorrect")
 
 
 def test_line_text_requires_binding_before_status():
