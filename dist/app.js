@@ -306,7 +306,7 @@ function renderExports(data) {
       <h2>要產生哪些檔案</h2>
       <label class="check"><input type="checkbox" name="fileTypes" value="menus" checked><span>菜單 Excel</span></label>
       <label class="check"><input type="checkbox" name="fileTypes" value="ingredients" checked><span>食材 Excel</span></label>
-      <label class="check"><input type="checkbox" name="fileTypes" value="seasonings"><span>調味料 Excel</span></label>
+      <label class="check"><input type="checkbox" name="fileTypes" value="seasonings" checked><span>調味料 Excel</span></label>
       <label class="check"><input type="checkbox" name="fileTypes" value="suppliers"><span>供應商 Excel</span></label>
       <h2>菜色</h2>
       ${recipes.map(recipe => `<label class="check"><input type="checkbox" name="recipeIds" value="${recipe.id}" checked><span>${escapeHtml(recipe.name)}</span></label>`).join("") || `<p class="muted">這個分店還沒有菜色</p>`}
@@ -1491,7 +1491,7 @@ async function downloadOfficial(form) {
   const lineText = `已上傳 ${branch.name} ${startDate} ${endDate}`;
   result.innerHTML = html`
     <div class="notice">
-      已產生 ${fileTypes.length} 個 Excel。${isStandaloneApp() ? "你現在是主畫面 App 模式，iPhone 可能會擋自動下載；請用下面每個檔案的按鈕儲存。" : "若手機瀏覽器擋住多檔下載，也可以用下面的單檔按鈕。"}
+      已產生 ${fileTypes.length} 個 Excel。LINE 文字可在網頁複製，不另下載文字檔。${isStandaloneApp() ? "你現在是主畫面 App 模式，iPhone 可能會擋自動下載；請用下面每個檔案的按鈕儲存。" : "若手機瀏覽器擋住多檔下載，也可以用下面的單檔按鈕。"}
       ${renderGeneratedDownloads(generatedFiles)}
       <br><br><button type="button" data-line-upload-text="${escapeHtml(lineText)}">我已上傳官方平台</button>
       <div id="lineUploadResult"></div>
@@ -1586,7 +1586,7 @@ function collectDownloadRepairIssues(data, branch, fileTypes, recipeIds, options
   }
 
   if (fileTypes.includes("seasonings")) {
-    for (const seasoning of usedSeasonings(data, recipes)) {
+    for (const seasoning of availableForBranch(data.seasonings, branchId)) {
       if (!seasoning) continue;
       const missing = [];
       if (!cleanCell(seasoning.name)) missing.push("調味料名稱");
@@ -1598,7 +1598,7 @@ function collectDownloadRepairIssues(data, branch, fileTypes, recipeIds, options
 
   const suppliersToCheck = fileTypes.includes("suppliers")
     ? availableForBranch(data.suppliers, branchId)
-    : usedSuppliers(data, recipes, fileTypes, options);
+    : usedSuppliers(data, recipes, fileTypes, { ...options, branchId });
   for (const supplier of suppliersToCheck) {
     const missing = supplierMissingFields(supplier);
     if (missing.length) issues.suppliers.push({ supplier, missing });
@@ -1626,7 +1626,6 @@ function validateDownload(data, branch, fileTypes, recipeIds, startDate, endDate
   if (!fileTypes.length) problems.push("請至少勾選一種 Excel。");
   const recipes = availableForBranch(data.recipes, branch?.id).filter(recipe => recipeIds.has(Number(recipe.id)));
   if (fileTypes.includes("menus") && !recipes.length) problems.push("產生菜單 Excel 請至少選一個菜色。");
-  if (fileTypes.includes("seasonings") && !recipes.length) problems.push("產生調味料 Excel 請至少選一個菜色。");
   if (fileTypes.includes("ingredients") && options.ingredientSource !== "manual" && !recipes.length) problems.push("依菜色組成產生食材 Excel 時，請至少選一個菜色。");
   if (fileTypes.includes("ingredients") && options.ingredientSource === "manual" && !options.manualIngredientIds?.size) problems.push("手動產生食材 Excel 時，請至少勾選一個進貨食材。");
   for (const field of ["schoolName", "serviceLocation", "restaurantName"]) {
@@ -1642,14 +1641,14 @@ function validateDownload(data, branch, fileTypes, recipeIds, startDate, endDate
     }
   }
   if (fileTypes.includes("seasonings")) {
-    for (const seasoning of usedSeasonings(data, recipes)) {
+    for (const seasoning of availableForBranch(data.seasonings, branch?.id)) {
       const supplier = data.suppliers.find(item => Number(item.id) === Number(seasoning?.supplierId));
       if (!supplier) problems.push(`調味料「${seasoning?.name || "未命名"}」缺少供應商。`);
     }
   }
   const suppliersToCheck = fileTypes.includes("suppliers")
     ? availableForBranch(data.suppliers, branch?.id)
-    : usedSuppliers(data, recipes, fileTypes, options);
+    : usedSuppliers(data, recipes, fileTypes, { ...options, branchId: branch?.id });
   if (fileTypes.includes("suppliers") || fileTypes.includes("ingredients") || fileTypes.includes("seasonings")) {
     for (const supplier of suppliersToCheck) {
       if (!supplier.name || !supplier.owner || !supplier.taxId || !supplier.phone || !supplier.address) problems.push(`供應商「${supplier.name || "未命名"}」負責人、統編、電話、地址都要填。`);
@@ -1665,7 +1664,7 @@ function fieldLabel(field) {
 function buildOfficialRows(data, branch, recipeIds, startDate, endDate, options = {}) {
   const dates = serviceDates(startDate, endDate, options.excludedDates);
   const recipes = availableForBranch(data.recipes, branch.id).filter(recipe => recipeIds.has(Number(recipe.id)));
-  const seasoningIds = usedSeasoningIds(data, recipes);
+  const seasonings = availableForBranch(data.seasonings, branch.id);
   const suppliers = availableForBranch(data.suppliers, branch.id);
   const rows = { menus: [], ingredients: [], seasonings: [], suppliers: [] };
   const ingredientRowKeys = new Set();
@@ -1690,8 +1689,7 @@ function buildOfficialRows(data, branch, recipeIds, startDate, endDate, options 
       rows.ingredients.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, date, purchaseDate, ingredient?.productName || "", ingredient?.ingredientName || "", ingredient?.origin || "", supplier?.name || ""]);
     }
   }
-  for (const id of seasoningIds) {
-    const seasoning = data.seasonings.find(item => Number(item.id) === Number(id));
+  for (const seasoning of seasonings) {
     const supplier = data.suppliers.find(item => Number(item.id) === Number(seasoning?.supplierId));
     rows.seasonings.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, seasoning?.name || "", purchaseDateFor(startDate, supplier), "", "", startDate, endDate, supplier?.name || ""]);
   }
@@ -1709,16 +1707,6 @@ function selectedIngredientIds(data, recipes, options = {}) {
   return usedIngredientIds(data, recipes);
 }
 
-function usedSeasoningIds(data, recipes) {
-  const recipeIds = new Set(recipes.map(recipe => Number(recipe.id)));
-  return [...new Set(data.recipeSeasonings.filter(item => recipeIds.has(Number(item.recipeId))).map(item => Number(item.seasoningId)))];
-}
-
-function usedSeasonings(data, recipes) {
-  const ids = new Set(usedSeasoningIds(data, recipes).map(Number));
-  return data.seasonings.filter(item => ids.has(Number(item.id)));
-}
-
 function usedSuppliers(data, recipes, fileTypes, options = {}) {
   const ids = new Set();
   if (fileTypes.includes("ingredients")) {
@@ -1728,7 +1716,7 @@ function usedSuppliers(data, recipes, fileTypes, options = {}) {
     }
   }
   if (fileTypes.includes("seasonings")) {
-    for (const seasoning of usedSeasonings(data, recipes)) {
+    for (const seasoning of availableForBranch(data.seasonings, options.branchId)) {
       if (seasoning.supplierId) ids.add(Number(seasoning.supplierId));
     }
   }
