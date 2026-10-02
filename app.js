@@ -1683,7 +1683,7 @@ function buildOfficialRows(data, branch, recipeIds, startDate, endDate, options 
       const ingredient = data.ingredients.find(item => Number(item.id) === Number(id));
       const supplier = data.suppliers.find(item => Number(item.id) === Number(ingredient?.supplierId));
       const purchaseDate = purchaseDateFor(date, supplier);
-      const key = [purchaseDate, ingredient?.id || "", supplier?.id || ""].join("|");
+      const key = [date, ingredient?.id || "", supplier?.id || ""].join("|");
       if (ingredientRowKeys.has(key)) continue;
       ingredientRowKeys.add(key);
       rows.ingredients.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, date, purchaseDate, ingredient?.productName || "", ingredient?.ingredientName || "", ingredient?.origin || "", supplier?.name || ""]);
