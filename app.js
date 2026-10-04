@@ -327,25 +327,7 @@ function renderExports(data) {
       <button>產生並下載</button>
       <div id="downloadResult"></div>
     </form>
-    <form class="card" data-action="lineCommand">
-      <h2>LINE 提醒文字</h2>
-      <label>分店
-        <select name="branchId" required>
-          ${data.branches.map(b => `<option value="${b.id}" ${String(branchId) === String(b.id) ? "selected" : ""}>${escapeHtml(b.name)}</option>`).join("")}
-        </select>
-      </label>
-      <label>用途
-        <select name="commandType">
-          <option value="closed">設定休息日，不提醒</option>
-          <option value="status">查詢登錄狀況</option>
-          <option value="uploaded">補記已上傳</option>
-        </select>
-      </label>
-      <label>開始日期<input name="startDate" type="date" required value="${startDate}"></label>
-      <label>結束日期<input name="endDate" type="date" required value="${endDate}"></label>
-      <button>產生 LINE 文字</button>
-      <div id="lineCommandResult"></div>
-    </form>`;
+`;
 }
 
 function renderRepairPanel(data, branchId, issues) {
@@ -899,10 +881,6 @@ async function handleSubmit(event) {
   }
   if (action === "downloadOfficial") {
     await downloadOfficial(form);
-    return;
-  }
-  if (action === "lineCommand") {
-    generateLineCommand(form);
     return;
   }
   if (action === "updateSupplier") {
@@ -1488,28 +1466,11 @@ async function downloadOfficial(form) {
     generatedFiles.push(file);
     if (!isStandaloneApp()) saveBlob(file.blob, file.filename);
   }
-  const lineText = `已上傳 ${branch.name} ${startDate} ${endDate}`;
   result.innerHTML = html`
     <div class="notice">
-      已產生 ${fileTypes.length} 個 Excel。LINE 文字可在網頁複製，不另下載文字檔。${isStandaloneApp() ? "你現在是主畫面 App 模式，iPhone 可能會擋自動下載；請用下面每個檔案的按鈕儲存。" : "若手機瀏覽器擋住多檔下載，也可以用下面的單檔按鈕。"}
+      已產生 ${fileTypes.length} 個 Excel。${isStandaloneApp() ? "你現在是主畫面 App 模式，iPhone 可能會擋自動下載；請用下面每個檔案的按鈕儲存。" : "若手機瀏覽器擋住多檔下載，也可以用下面的單檔按鈕。"}
       ${renderGeneratedDownloads(generatedFiles)}
-      <br><br><button type="button" data-line-upload-text="${escapeHtml(lineText)}">我已上傳官方平台</button>
-      <div id="lineUploadResult"></div>
     </div>`;
-}
-
-function generateLineCommand(form) {
-  const data = new FormData(form);
-  const branchName = form.querySelector(`select[name="branchId"] option:checked`)?.textContent?.trim() || "";
-  const startDate = data.get("startDate");
-  const endDate = data.get("endDate");
-  const commandType = data.get("commandType");
-  const prefix = commandType === "closed" ? "休息" : commandType === "status" ? "登錄狀況" : "已上傳";
-  const text = prefix === "登錄狀況"
-    ? `${prefix} ${startDate} ${endDate}`
-    : `${prefix} ${branchName} ${startDate} ${endDate}`;
-  const result = document.getElementById("lineCommandResult");
-  if (result) result.innerHTML = lineCopyBox("lineCommandText", text, commandType === "closed" ? "把這段傳給 LINE 機器人，這段日期就不會提醒未上傳。" : "把這段傳給 LINE 機器人。");
 }
 
 function lineCopyBox(id, text, helpText) {
@@ -2003,11 +1964,6 @@ document.addEventListener("click", async event => {
     await repairMissingData(container);
     alert("待補資料已儲存，請再按一次產生並下載。");
     await render();
-  }
-  const lineUpload = event.target.closest("[data-line-upload-text]");
-  if (lineUpload) {
-    const target = document.getElementById("lineUploadResult");
-    if (target) target.innerHTML = lineCopyBox("lineUploadText", lineUpload.dataset.lineUploadText, "把下面這段傳給 LINE 機器人，它就會記錄這段日期已上傳。");
   }
   const shareDownload = event.target.closest("[data-share-download]");
   if (shareDownload) await shareGeneratedDownload(shareDownload.dataset.shareDownload);
