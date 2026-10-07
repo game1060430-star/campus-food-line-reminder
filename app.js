@@ -1686,7 +1686,7 @@ function buildOfficialRows(data, branch, recipeIds, startDate, endDate, options 
       const key = [date, ingredient?.id || "", supplier?.id || ""].join("|");
       if (ingredientRowKeys.has(key)) continue;
       ingredientRowKeys.add(key);
-      rows.ingredients.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, date, purchaseDate, ingredient?.productName || "", ingredient?.ingredientName || "", ingredient?.origin || "", supplier?.name || "", "", "", "", "", "", "N", "N"]);
+      rows.ingredients.push([branch.schoolName, branch.serviceLocation, branch.restaurantName, date, purchaseDate, ingredient?.productName || "", ingredient?.ingredientName || "", ingredient?.origin || "", supplier?.name || "", "", "", "", "", ingredient?.isProcessed ? "Y" : "N", "N", "N"]);
     }
   }
   for (const seasoning of seasonings) {
