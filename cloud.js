@@ -4,6 +4,7 @@ const FOOD_CLOUD_KEY = 'sb_publishable_AuuKLtwZf4I8FkIGTOblCA_8RY_jqMx';
 const FOOD_CLOUD_EMAIL = 'game1060430@gmail.com';
 const FOOD_SESSION_KEY = 'campus-food-cloud-session-v1';
 const FOOD_MODE_KEY = 'campus-food-storage-mode';
+let foodLoginNotice = "";
 let foodSession = null;
 let foodCloudData = null;
 let foodCloudRevision = 0;
@@ -35,12 +36,23 @@ async function cloudRequest(path, options = {}, authenticated = true) {
     }});
   } catch { throw new Error('目前無法連上雲端。這次修改未儲存，請檢查網路後重試。'); }
   const result = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(result?.message || result?.msg || result?.error_description || '雲端連線失敗，請重新登入或稍後重試。');
+  if (!response.ok) {
+    const code = result?.code || result?.error_code;
+    const message = result?.message || result?.msg || result?.error_description || '雲端連線失敗，請重新登入或稍後重試。';
+    if (code === 'over_email_send_rate_limit' || /email rate limit/i.test(message)) throw new Error('登入信寄送已達每小時限制，請稍後再試。重複按寄送不會解除限制。');
+    if (code === 'otp_expired' || /expired|invalid.*token/i.test(message)) throw new Error('驗證碼已失效或過期，請使用最新一封信的驗證碼。');
+    throw new Error(message);
+  }
   return result;
 }
 async function cloudInit() {
   try { foodSession = JSON.parse(localStorage.getItem(FOOD_SESSION_KEY)); } catch { cloudSessionSave(null); }
   const params = new URLSearchParams(location.hash.slice(1));
+  if (params.has('error')) {
+    foodLoginNotice = params.get('error_code') === 'otp_expired' ? '登入沒有成功：信中的連結已失效或過期。請重新寄送登入信，並使用最新一封信的連結。' : '登入沒有成功，請重新寄送登入信。';
+    history.replaceState(null, '', location.pathname + location.search);
+    state.view = 'cloud';
+  }
   if (params.has('access_token')) {
     const session = {access_token: params.get('access_token'), refresh_token: params.get('refresh_token'), expires_at: Date.now() / 1000 + Number(params.get('expires_in') || 3600)};
     // Clear the one-time authentication response from browser history immediately.
@@ -75,8 +87,9 @@ function cloudMutate(change) {
 }
 function renderCloud() {
   return `<h1>雲端資料</h1><div class="notice">手機和電腦使用同一個帳號登入，就能共用資料。雲端模式需要連線；資料修改後立即儲存。</div>
-    <div class="card"><b>目前使用：${cloudActive() ? '雲端資料' : '本機資料'}</b><p>登入信箱：${escapeHtml(FOOD_CLOUD_EMAIL)}</p>
-    ${foodSession ? `<div class="actions"><button data-cloud-action="use">使用雲端資料／重新載入</button><button class="secondary" data-cloud-action="logout">登出雲端</button></div>` : `<button data-cloud-action="login">寄送登入連結到信箱</button><p id="cloudLoginResult"></p>`}
+    ${foodLoginNotice ? `<div class="notice">${escapeHtml(foodLoginNotice)}</div>` : ""}
+    <div class="card"><b>目前使用：${cloudActive() ? '雲端資料' : '本機資料'}</b><p>登入狀態：${foodSession ? "已登入" : "尚未登入"}</p><p>登入信箱：${escapeHtml(FOOD_CLOUD_EMAIL)}</p>
+    ${foodSession ? `<div class="actions"><button data-cloud-action="use">使用雲端資料／重新載入</button><button class="secondary" data-cloud-action="logout">登出雲端</button></div>` : `<button data-cloud-action="login">寄送登入連結到信箱</button><p id="cloudLoginResult"></p><p>請點最新一封信的連結。每個連結只能使用一次；手機和電腦請分別申請登入信。</p>`}
     <button class="secondary" data-cloud-action="local">使用這台裝置的本機資料</button></div>
     ${foodSession ? `<div class="card"><h2>搬移原有資料</h2><p>請在原本已有食材資料的手機或電腦操作。只有雲端尚未有資料時才能搬移，本機資料會保留。</p><button data-cloud-action="migrate">將這台裝置的本機資料搬到雲端</button><p>搬移完成後，其他裝置登入同一個信箱即可使用。</p></div>` : ''}`;
 }
@@ -89,7 +102,7 @@ document.addEventListener('click', async event => {
     if (action === 'login') {
       const redirect = location.origin + location.pathname;
       await cloudRequest('/auth/v1/otp?redirect_to=' + encodeURIComponent(redirect), {method: 'POST', body: JSON.stringify({email: FOOD_CLOUD_EMAIL, create_user: true})}, false);
-      document.getElementById('cloudLoginResult').textContent = '登入連結已寄出。請在這台裝置開啟信箱，點信中的連結。';
+      document.getElementById('cloudLoginResult').textContent = '登入連結已寄出。請在這台裝置開啟最新一封信，點信中的連結。';
     }
     if (action === 'use') {
       await cloudLoad(); localStorage.setItem(FOOD_MODE_KEY, 'cloud'); state.branchId = ''; state.view = 'home'; await render();
@@ -108,6 +121,10 @@ document.addEventListener('click', async event => {
       await cloudMutate(next => { for (const store of STORES) next[store] = local[store]; });
       localStorage.setItem(FOOD_MODE_KEY, 'cloud'); state.branchId = ''; state.view = 'home'; await render(); alert('資料已搬到雲端。其他裝置登入同一個信箱即可使用。');
     }
-  } catch (error) { alert(error.message); }
+  } catch (error) {
+    const status = document.getElementById('cloudLoginResult');
+    if (status) status.textContent = error.message;
+    else alert(error.message);
+  }
   finally { button.disabled = false; }
 });
