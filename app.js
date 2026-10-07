@@ -60,7 +60,7 @@ function tx(store, mode = "readonly") {
   return db.transaction(store, mode).objectStore(store);
 }
 
-function all(store) {
+function localAll(store) {
   return new Promise((resolve, reject) => {
     const request = tx(store).getAll();
     request.onsuccess = () => resolve(request.result || []);
@@ -68,7 +68,22 @@ function all(store) {
   });
 }
 
+function all(store) {
+  if (cloudActive()) {
+    if (!foodSession) return Promise.reject(new Error("請先登入雲端帳號。"));
+    return Promise.resolve(structuredClone(foodCloudData?.[store] || []));
+  }
+  return localAll(store);
+}
+
 function put(store, value) {
+  if (cloudActive()) return cloudMutate(data => {
+    const row = {...value, updatedAt: new Date().toISOString()};
+    row.id = row.id ? Number(row.id) : Math.max(0, ...data[store].map(item => Number(item.id))) + 1;
+    const index = data[store].findIndex(item => Number(item.id) === row.id);
+    if (index < 0) data[store].push(row); else data[store][index] = row;
+    return row.id;
+  });
   return new Promise((resolve, reject) => {
     const nextValue = { ...value, updatedAt: new Date().toISOString() };
     if (nextValue.id === undefined || nextValue.id === null || nextValue.id === "") delete nextValue.id;
@@ -79,6 +94,7 @@ function put(store, value) {
 }
 
 function del(store, id) {
+  if (cloudActive()) return cloudMutate(data => { data[store] = data[store].filter(item => Number(item.id) !== Number(id)); });
   return new Promise((resolve, reject) => {
     const request = tx(store, "readwrite").delete(Number(id));
     request.onsuccess = () => resolve();
@@ -87,6 +103,7 @@ function del(store, id) {
 }
 
 function deleteWhere(store, predicate) {
+  if (cloudActive()) return cloudMutate(data => { data[store] = data[store].filter(item => !predicate(item)); });
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(store, "readwrite");
     const objectStore = transaction.objectStore(store);
@@ -103,6 +120,7 @@ function deleteWhere(store, predicate) {
 }
 
 function clearStore(store) {
+  if (cloudActive()) return cloudMutate(data => { data[store] = []; });
   return new Promise((resolve, reject) => {
     const request = tx(store, "readwrite").clear();
     request.onsuccess = () => resolve();
@@ -149,14 +167,23 @@ function scopeIds(item) {
 }
 
 async function dataBundle() {
+  if (cloudActive()) { await foodWriteQueue; return structuredClone(foodCloudData || await cloudLoad()); }
   const entries = await Promise.all(STORES.map(async store => [store, await all(store)]));
   return Object.fromEntries(entries);
 }
 
 async function render() {
+  if (state.view === "cloud" || (cloudActive() && !foodSession)) {
+    state.view = "cloud";
+    document.getElementById("app").innerHTML = renderCloud();
+    document.querySelectorAll("nav button").forEach(btn => btn.classList.toggle("active", btn.dataset.view === "cloud"));
+    document.getElementById("scopeLabel").textContent = "雲端登入／本機資料";
+    return;
+  }
+  if (cloudActive()) await cloudLoad();
   const data = await dataBundle();
   document.querySelectorAll("nav button").forEach(btn => btn.classList.toggle("active", btn.dataset.view === state.view));
-  document.getElementById("scopeLabel").textContent = activeBranchName(data.branches);
+  document.getElementById("scopeLabel").textContent = `${cloudActive() ? "雲端" : "本機"} · ${activeBranchName(data.branches)}`;
   const app = document.getElementById("app");
   if (state.view === "home") app.innerHTML = renderHome(data);
   if (state.view === "masters") app.innerHTML = renderMasters(data);
@@ -178,7 +205,7 @@ function branchSelect(branches) {
 function renderHome(data) {
   return html`
     <h1>選擇工作區</h1>
-    <div class="notice"><b>資料存在這支手機。</b><br>先選分店再操作。要新增共用資料或共享給分店，選「分店管理／資源共享」。</div>
+    <div class="notice"><b>${cloudActive() ? "資料儲存在雲端，手機和電腦共用。" : "資料存在這台裝置。可到「雲端」登入並搬移資料。"}</b><br>先選分店再操作。要新增共用資料或共享給分店，選「分店管理／資源共享」。</div>
     <section class="card">
       ${branchSelect(data.branches)}
       <div class="actions">
@@ -417,7 +444,7 @@ function renderRepairFields(data, branchId, issues) {
 function renderBackup(data) {
   return html`
     <h1>備份／還原</h1>
-    <div class="notice"><b>建議定期備份。</b><br>這個 Excel 就是手機本機資料的完整備份。存在 iCloud、Google Drive 或 LINE Keep 都可以。</div>
+    <div class="notice"><b>建議定期備份。</b><br>這個 Excel 是目前${cloudActive() ? "雲端" : "本機"}資料的完整備份。存在 iCloud、Google Drive 或 LINE Keep 都可以。</div>
     <div class="card actions">
       <button data-action-click="exportBackup">匯出完整備份 Excel</button>
       <label>匯入備份 Excel<input type="file" id="importBackup" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"></label>
@@ -1245,7 +1272,7 @@ async function importBackup(file) {
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: "array" });
   const byLabel = Object.fromEntries(Object.entries(LABELS).map(([store, label]) => [label, store]));
-  for (const store of STORES) await clearStore(store);
+  const restored = cloudEmpty();
   for (const sheetName of workbook.SheetNames) {
     const store = byLabel[sheetName];
     if (!store) continue;
@@ -1255,8 +1282,13 @@ async function importBackup(file) {
       for (const key of ["id", "branchId", "supplierId", "recipeId", "ingredientId", "seasoningId", "calories"]) {
         if (normalized[key] !== "" && normalized[key] !== undefined && normalized[key] !== null) normalized[key] = Number(normalized[key]);
       }
-      await put(store, normalized);
+      restored[store].push(normalized);
     }
+  }
+  if (cloudActive()) await cloudMutate(next => { for (const store of STORES) next[store] = restored[store]; });
+  else {
+    for (const store of STORES) await clearStore(store);
+    for (const store of STORES) for (const row of restored[store]) await put(store, row);
   }
   alert("備份已匯入");
   await render();
@@ -1879,14 +1911,17 @@ async function shareGeneratedDownload(id) {
   saveBlob(item.blob, item.filename);
 }
 
-document.addEventListener("submit", handleSubmit);
+document.addEventListener("submit", event => {
+  handleSubmit(event).catch(error => alert(error.message || "儲存失敗，請重新載入資料後再試。"));
+});
+window.addEventListener("unhandledrejection", event => { event.preventDefault(); alert(event.reason?.message || "操作失敗，請稍後重試。"); });
 document.addEventListener("change", async event => {
   if (event.target.id === "branchScope") {
     state.branchId = event.target.value;
     await render();
   }
   if (event.target.id === "importBackup" && event.target.files[0]) {
-    if (confirm("匯入會覆蓋這支手機目前資料，確定？")) await importBackup(event.target.files[0]);
+    if (confirm("匯入會覆蓋目前使用的資料（雲端模式下，其他裝置也會看到匯入結果），確定？")) await importBackup(event.target.files[0]);
     event.target.value = "";
   }
   if (event.target.dataset.officialImport && event.target.files[0]) {
@@ -1979,6 +2014,7 @@ document.addEventListener("click", async event => {
 
 async function init() {
   db = await openDb();
+  await cloudInit();
   await registerOfflineApp();
   await render();
 }

@@ -6,14 +6,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="食材登錄">
   <meta name="theme-color" content="#111111">
-  <title>食材登錄本機版</title>
+  <title>食材登錄</title>
   <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./styles.css?v=20261007-1">
+  <link rel="stylesheet" href="./styles.css?v=20261007-cloud1">
   <script src="./vendor/xlsx.full.min.js"></script>
   <script src="./vendor/jszip.min.js"></script>
 </head>
 <body>
-  <header><b>食材登錄本機版</b><br><small id="scopeLabel">資料存在這支手機裡</small></header>
+  <header><b>食材登錄</b><br><small id="scopeLabel">本機／雲端資料</small></header>
   <main id="app"><div class="notice">載入中，如果一直停在這裡請重新整理。</div></main>
   <nav>
     <button data-view="home" class="active">首頁</button>
@@ -21,7 +21,9 @@
     <button data-view="recipes">菜色</button>
     <button data-view="exports">下載</button>
     <button data-view="backup">備份</button>
+    <button data-view="cloud">雲端</button>
   </nav>
-  <script src="./app.js?v=20261007-1"></script>
+  <script src="./cloud.js?v=20261007-cloud1"></script>
+  <script src="./app.js?v=20261007-cloud1"></script>
 </body>
 </html>
