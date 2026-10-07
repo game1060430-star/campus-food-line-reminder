@@ -20,7 +20,7 @@ const LABELS = {
 const VISIBLE_BACKUP_STORES = ["branches", "suppliers", "ingredients", "seasonings", "recipes", "uploadConfirmations"];
 const OFFICIAL_TEMPLATES = {
   menus: { file: "PreMenuExcelExample.xlsx", name: "菜單", cols: 8, required: [1, 2, 3, 4, 6, 7, 8] },
-  ingredients: { file: "PrerestaurantingredientExcelExample.xlsx", name: "食材", cols: 22, required: [1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16] },
+  ingredients: { file: "PrerestaurantingredientExcelExample.xlsx", name: "食材", cols: 22, required: [1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 16] },
   seasonings: { file: "seasoningstockdataCollegeExcelExample.xlsx", name: "調味料", cols: 20, required: [1, 2, 3, 4, 5, 8, 9, 10] },
   suppliers: { file: "supplierExcelExample.xlsx", name: "供應商", cols: 5, required: [1, 2, 3, 4, 5] }
 };
