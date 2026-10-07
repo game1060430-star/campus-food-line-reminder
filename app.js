@@ -1,3 +1,4 @@
+const REVIEWED_PROCESSED_NAMES = new Set(["板豆腐", "豆乾", "炸豆包", "雞肉漢堡排", "冷凍-檸檬原汁", "東芳-小熱狗", "(富)-蘑菇醬", "(富)-黑胡椒醬", "乳酪餅", "富-優質火腿", "富-特級大火腿-燻", "津-熟水餃", "吐司", "義美鮮奶", "福汎-大-椰香奶酥", "金鶴-大-巧克力醬", "卜-早餐雞堡", "喬富-德國起司", "憶霖-蜂蜜芥茉醬", "憶霖-西式千島醬", "藍山-三合一咖啡", "全麥吐司", "四角薯餅", "厚片吐司", "果大-白-顆粒柳橙汁", "鮮醇瑪佳琳奶油", "六庫-泰式打拋豬肉醬", "蛋餅皮-蔥花", "金鶴-台灣凍蒜抹醬", "非基改豆漿", "蘿蔔糕", "梨山(小)草莓醬", "捷香雞塊", "藍帶<雙色>起司絲", "三花奶精粉", "強-漢堡肉", "阿華田", "富美-大熱狗", "牛堡", "大亨堡", "富-培根", "加拿大脆薯", "府-古早味肉燥", "禾-熟水餃", "漢堡麵包", "東豪-燻雞肉片", "風-油麵", "喬富-(辣)卡啦雞腿", "安佳無鹽奶油", "肉鬆-細", "金鶴-大-花生醬", "榛果山藥薏仁粉", "炙燒黑椒里肌", "起司豬排", "韓式泡菜", "義大利麵", "無糖-非基改豆漿", "西西里紅醬", "咖哩肉醬", "奶青醬", "奶油蒜味培根白醬", "印尼泡麵"]);
 window.addEventListener("error", event => {
   const app = document.getElementById("app");
   if (app) app.innerHTML = `<div class="notice">啟動失敗：${escapeHtml(event.message || "未知錯誤")}</div>`;
@@ -476,7 +477,7 @@ function bulkMasterModeButtons() {
     ["delete", "批量刪除"]
   ];
   return html`
-    <h2>批量修改</h2>
+    <h2>批量修改</h2><form data-action="markReviewedProcessed"><p>標示兩家分店清單中已確認的加工食品，保留其他食材原本設定。</p><button>套用已確認的加工食品標示</button></form>
     <div class="card mode-grid">
       ${modes.map(([mode, label]) => `<button type="button" class="${state.masterBatchMode === mode ? "" : "secondary"}" data-master-batch-mode="${mode}">${label}</button>`).join("")}
       ${state.masterBatchMode ? `<button type="button" class="secondary" data-master-batch-mode="">收起批量修改</button>` : ""}
@@ -767,12 +768,12 @@ function supplierRow(item, data) {
 function ingredientRow(item, data, suppliers) {
   const usedBy = data.recipeIngredients.filter(link => Number(link.ingredientId) === Number(item.id)).length;
   return html`
-    <div class="row"><span><b>${escapeHtml(item.ingredientName)}</b><br><small>${scopeText(item, data.branches)}／${escapeHtml(item.origin || "臺灣")}／${supplierName(data.suppliers, item.supplierId)}${usedBy ? `／${usedBy} 道菜使用` : ""}</small></span><button class="danger" data-delete="ingredients:${item.id}">刪除錯誤食材</button></div>
+    <div class="row"><span><b>${escapeHtml(item.ingredientName)}</b>${item.isProcessed ? " · 加工食品" : ""}<br><small>${scopeText(item, data.branches)}／${escapeHtml(item.origin || "臺灣")}／${supplierName(data.suppliers, item.supplierId)}${usedBy ? `／${usedBy} 道菜使用` : ""}</small></span><button class="danger" data-delete="ingredients:${item.id}">刪除錯誤食材</button></div>
     <details>
       <summary>修改食材</summary>
       <form data-action="updateIngredient" data-id="${item.id}">
         <label>食材名稱<input name="ingredientName" required value="${escapeHtml(item.ingredientName)}"></label>
-        <label>產品名稱<input name="productName" value="${escapeHtml(item.productName || item.ingredientName)}"></label>
+        <label>產品名稱<input name="productName" value="${escapeHtml(item.productName || item.ingredientName)}"></label><label class="check"><input type="checkbox" name="isProcessed" ${item.isProcessed ? "checked" : ""}><span>加工食品</span></label>
         <label>原產地<input name="origin" placeholder="不填會自動填臺灣" value="${escapeHtml(item.origin || "臺灣")}"></label>
         <label>供應商<select name="supplierId"><option value="">待補</option>${suppliers.map(s => `<option value="${s.id}" ${Number(item.supplierId) === Number(s.id) ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}</select></label>
         ${scopeControls(item, data.branches)}
@@ -884,6 +885,12 @@ async function handleSubmit(event) {
   const action = form.dataset.action;
   const values = formValues(form);
   const branchId = state.branchId ? Number(state.branchId) : null;
+  if (action === "markReviewedProcessed") {
+    let count = 0;
+    if (cloudActive()) await cloudMutate(next => { next.ingredients.forEach(item => { if (REVIEWED_PROCESSED_NAMES.has(item.ingredientName)) { item.isProcessed = true; count++; } }); });
+    else { for (const item of await all("ingredients")) { if (REVIEWED_PROCESSED_NAMES.has(item.ingredientName)) { await put("ingredients", { ...item, isProcessed: true }); count++; } } }
+    alert(`已儲存 ${count} 筆加工食品標示。`);
+  }
   if (action === "addBranch") {
     await put("branches", { name: values.name, schoolName: values.schoolName, serviceLocation: values.serviceLocation, restaurantName: values.restaurantName });
   }
@@ -914,7 +921,7 @@ async function handleSubmit(event) {
     await put("suppliers", { id: Number(form.dataset.id), ...scopedPayload(form), name: values.name, owner: values.owner, taxId: values.taxId, phone: values.phone, address: values.address, deliveryWeekdays: deliveryPayload(form) });
   }
   if (action === "updateIngredient") {
-    await put("ingredients", { id: Number(form.dataset.id), ...scopedPayload(form), ingredientName: values.ingredientName, productName: values.productName || values.ingredientName, origin: values.origin || "臺灣", supplierId: values.supplierId ? Number(values.supplierId) : null });
+    await put("ingredients", { ...(await all("ingredients")).find(item => Number(item.id) === Number(form.dataset.id)), id: Number(form.dataset.id), isProcessed: values.isProcessed === "on", ...scopedPayload(form), ingredientName: values.ingredientName, productName: values.productName || values.ingredientName, origin: values.origin || "臺灣", supplierId: values.supplierId ? Number(values.supplierId) : null });
   }
   if (action === "updateSeasoning") {
     await put("seasonings", { id: Number(form.dataset.id), ...scopedPayload(form), name: values.name, supplierId: values.supplierId ? Number(values.supplierId) : null });
